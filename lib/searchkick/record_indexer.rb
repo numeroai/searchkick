@@ -54,10 +54,6 @@ module Searchkick
           )
         end
       when :queue
-        if method_name
-          raise Error, "Partial reindex not supported with queue option"
-        end
-
         index.reindex_queue.push_records(records)
       when true, :inline
         index_records, other_records = records.partition { |r| index_record?(r) }

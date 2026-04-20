@@ -24,7 +24,8 @@ module Searchkick
 
           # escape pipe with double pipe
           value = escape(record.id.to_s)
-          value = "#{value}|#{escape(routing)}" if routing
+          value = "#{value}|#{escape(routing.to_s)}" if routing
+          value = "#{value}|#{escape(method_name.to_s)}" if method_name
           value
         end
 
