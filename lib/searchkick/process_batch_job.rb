@@ -8,17 +8,15 @@ module Searchkick
 
       items =
         record_ids.map do |r|
-          parts = r.split(/(?<!\|)\|(?!\|)/, 3)
+          parts = r.split(/(?<!\|)\|(?!\|)/, 4)
             .map { |v| v.gsub("||", "|") }
-          {id: parts[0], routing: parts[1], method_name: parts[2]}
+          {id: parts[0], routing: parts[1].presence, method_name: parts[2].presence, ignore_missing: parts[3] == 1}
         end
 
       relation = Searchkick.scope(model)
 
 
-      items_by_method = items.group_by { |item| item[:method_name] }
-
-      items_by_method.each do |method_name, method_items|
+      items.group_by { |i| [i[:method_name], i[:ignore_missing]] }.each do |(method_name, ignore_missing), method_items|
         RecordIndexer.new(index).reindex_items(relation, method_items, method_name:, ignore_missing:)
       end
     end

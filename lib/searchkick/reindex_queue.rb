@@ -13,7 +13,7 @@ module Searchkick
       Searchkick.with_redis { |r| r.call("LPUSH", redis_key, record_ids) }
     end
 
-    def push_records(records)
+    def push_records(records, method_name: nil, ignore_missing: nil)
       record_ids =
         records.map do |record|
           # always pass routing in case record is deleted
@@ -24,8 +24,15 @@ module Searchkick
 
           # escape pipe with double pipe
           value = escape(record.id.to_s)
-          value = "#{value}|#{escape(routing.to_s)}" if routing
-          value = "#{value}|#{escape(method_name.to_s)}" if method_name
+          if routing || method_name || ignore_missing
+            value = "#{value}|#{routing ? escape(routing.to_s) : ''}"
+          end
+          if method_name || ignore_missing
+            value = "#{value}|#{method_name ? escape(method_name.to_s) : ''}"
+          end
+          if ignore_missing
+            value = "#{value}|ignore_missing"
+          end
           value
         end
 
