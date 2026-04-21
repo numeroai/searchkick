@@ -10,7 +10,7 @@ module Searchkick
         record_ids.map do |r|
           parts = r.split(/(?<!\|)\|(?!\|)/, 4)
             .map { |v| v.gsub("||", "|") }
-          {id: parts[0], routing: parts[1].presence, method_name: parts[2].presence, ignore_missing: parts[3] == 1}
+          {id: parts[0], routing: parts[1].presence, method_name: parts[2].presence, ignore_missing: parts[3] == 'ignore_missing'}
         end
 
       relation = Searchkick.scope(model)
