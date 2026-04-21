@@ -1,3 +1,5 @@
+require "json"
+
 module Searchkick
   class ReindexQueue
     attr_reader :name
@@ -18,22 +20,14 @@ module Searchkick
         records.map do |record|
           # always pass routing in case record is deleted
           # before the queue job runs
-          if record.respond_to?(:search_routing)
-            routing = record.search_routing
-          end
+          routing = record.search_routing if record.respond_to?(:search_routing)
 
-          # escape pipe with double pipe
-          value = escape(record.id.to_s)
-          if routing || method_name || ignore_missing
-            value = "#{value}|#{routing ? escape(routing.to_s) : ''}"
-          end
-          if method_name || ignore_missing
-            value = "#{value}|#{method_name ? escape(method_name.to_s) : ''}"
-          end
-          if ignore_missing
-            value = "#{value}|ignore_missing"
-          end
-          value
+          serialize_record(
+            record.id,
+            routing: routing,
+            method_name: method_name,
+            ignore_missing: ignore_missing
+          )
         end
 
       push(record_ids)
@@ -56,6 +50,14 @@ module Searchkick
 
     def redis_key
       "searchkick:reindex_queue:#{name}"
+    end
+
+    def serialize_record(record_id, routing:, method_name:, ignore_missing:)
+      payload = {"id" => record_id.to_s}
+      payload["routing"] = routing.to_s if routing
+      payload["method_name"] = method_name.to_s if method_name
+      payload["ignore_missing"] = true if ignore_missing
+      "json:#{JSON.generate(payload)}"
     end
 
     def escape(value)
