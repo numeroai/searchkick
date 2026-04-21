@@ -8,9 +8,12 @@ module Searchkick
 
       items =
         record_ids.map do |r|
-          parts = r.split(/(?<!\|)\|(?!\|)/, 4)
-            .map { |v| v.gsub("||", "|") }
-          {id: parts[0], routing: parts[1].presence, method_name: parts[2].presence, ignore_missing: parts[3] == 'ignore_missing'}
+          if r.start_with?("json:")
+            JSON.parse(r[5..-1]).transform_keys(&:to_sym)
+          else
+            parts = r.split(/(?<!\|)\|(?!\|)/, 2).map { |v| v.gsub("||", "|") }
+            {id: parts[0], routing: parts[1].presence, method_name: nil, ignore_missing: nil}
+          end
         end
 
       relation = Searchkick.scope(model)

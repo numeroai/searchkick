@@ -24,9 +24,9 @@ module Searchkick
 
           serialize_record(
             record.id,
-            routing: routing,
-            method_name: method_name,
-            ignore_missing: ignore_missing
+            routing:,
+            method_name:,
+            ignore_missing:
           )
         end
 
