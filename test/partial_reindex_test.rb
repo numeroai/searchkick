@@ -107,6 +107,16 @@ class PartialReindexTest < Minitest::Test
     end
   end
 
+  def test_record_missing_queue
+    contact = Contact.create!(name: "Hi", email: "hi@example.com")
+    Contact.searchkick_index.remove(contact)
+
+    error = assert_raises(Searchkick::ImportError) do
+      contact.reindex(:search_name, mode: :queue, ignore_missing: false)
+    end
+    assert_match "document missing", error.message
+  end
+
   def test_relation_inline
     store [{name: "Hi", color: "Blue"}]
 
@@ -231,5 +241,40 @@ class PartialReindexTest < Minitest::Test
     perform_enqueued_jobs do
       Product.where(id: product.id).reindex(:search_name, mode: :async, ignore_missing: true)
     end
+  end
+
+  def test_queue_groups_by_method_name_ignore_missing
+    Contact.searchkick_index.reindex_queue.clear
+
+    alice = Contact.create!(name: "Alice", email: "alice@example.com")
+    bob   = Contact.create!(name: "Bob",   email: "bob@example.com")
+    carol = Contact.create!(name: "Carol", email: "carol@example.com")
+    [alice, bob, carol].each(&:reindex)
+
+    Searchkick.callbacks(false) do
+      alice.update!(name: "Alice-new", email: "alice-new@example.com")
+      bob.update!(name:   "Bob-new",   email: "bob-new@example.com")
+      carol.update!(name: "Carol-new", email: "carol-new@example.com")
+    end
+
+    alice.reindex(:search_name, mode: :queue, ignore_missing: true)
+    bob.reindex(:search_email, mode: :queue, ignore_missing: true)
+    carol.reindex(mode: :queue, ignore_missing: true)
+
+    perform_enqueued_jobs do
+      Searchkick::ProcessQueueJob.perform_now(class_name: "Contact")
+    end
+    Contact.searchkick_index.refresh
+
+    alice_doc = Contact.searchkick_index.retrieve(alice)
+    bob_doc   = Contact.searchkick_index.retrieve(bob)
+    carol_doc = Contact.searchkick_index.retrieve(carol)
+
+    assert_equal "Alice-new",         alice_doc["name"]
+    assert_equal "alice@example.com", alice_doc["email"]
+    assert_equal "Bob",           bob_doc["name"]
+    assert_equal "bob-new@example.com",   bob_doc["email"]
+    assert_equal "Carol-new",              carol_doc["name"]
+    assert_equal "carol-new@example.com",  carol_doc["email"]
   end
 end
