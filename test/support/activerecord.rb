@@ -39,6 +39,11 @@ ActiveRecord::Schema.define do
     t.string :name
   end
 
+  create_table :contacts do |t|
+    t.string :name
+    t.string :email
+  end
+
   create_table :regions do |t|
     t.string :name
     t.text :text
@@ -84,6 +89,9 @@ end
 
 class Store < ActiveRecord::Base
   has_many :products
+end
+
+class Contact < ActiveRecord::Base
 end
 
 class Region < ActiveRecord::Base
