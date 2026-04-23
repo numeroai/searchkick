@@ -111,8 +111,11 @@ class PartialReindexTest < Minitest::Test
     contact = Contact.create!(name: "Hi", email: "hi@example.com")
     Contact.searchkick_index.remove(contact)
 
+
+    contact.reindex(:search_name, mode: :queue, ignore_missing: false)
+
     error = assert_raises(Searchkick::ImportError) do
-      contact.reindex(:search_name, mode: :queue, ignore_missing: false)
+      Searchkick::ProcessQueueJob.perform_now(class_name: "Contact", inline: true)
     end
     assert_match "document missing", error.message
   end
@@ -276,5 +279,74 @@ class PartialReindexTest < Minitest::Test
     assert_equal "bob-new@example.com",   bob_doc["email"]
     assert_equal "Carol-new",              carol_doc["name"]
     assert_equal "carol-new@example.com",  carol_doc["email"]
+  end
+
+  def test_queue_groups_by_method_name_ignore_missing
+    Contact.searchkick_index.reindex_queue.clear
+
+    contact_1 = Contact.create!(name: "Hi-1", email: "hi-1@example.com")
+    contact_2 = Contact.create!(name: "Hi-2", email: "hi-2@example.com")
+    [contact_1, contact_2].each(&:reindex)
+    Contact.searchkick_index.refresh
+
+    # contact_2's doc is missing from the index but still in the DB
+    Contact.searchkick_index.remove(contact_2)
+    Contact.searchkick_index.refresh
+
+    Searchkick.callbacks(false) do
+      contact_1.update!(name: "Bye-1", email: "bye-1@example.com")
+      contact_2.update!(name: "Bye-2", email: "bye-2@example.com")
+    end
+
+    # Three queue entries, three distinct group keys:
+    #   [:search_name,  nil ]  -> contact_1
+    #   [:search_email, nil ]  -> contact_1
+    #   [:search_name,  true]  -> contact_2 (missing from index)
+    contact_1.reindex(:search_name,  mode: :queue)
+    contact_1.reindex(:search_email, mode: :queue)
+    contact_2.reindex(:search_name,  mode: :queue, ignore_missing: true)
+
+    perform_enqueued_jobs do
+      Searchkick::ProcessQueueJob.perform_now(class_name: "Contact")
+    end
+    Contact.searchkick_index.refresh
+
+    # contact_1: both :search_name and :search_email groups ran in the same drain
+    doc_1 = Contact.searchkick_index.retrieve(contact_1)
+    assert_equal "Bye-1",             doc_1["name"]
+    assert_equal "bye-1@example.com", doc_1["email"]
+
+    # contact_2: ignore_missing: true suppressed the "document missing" error;
+    # doc is still absent from the index (no ghost write)
+    missing = Contact.search("*", where: {id: contact_2.id}, load: false).hits
+    assert_equal 0, missing.length
+  end
+
+  def test_queue_legacy_pipe_format_still_processes
+    Contact.searchkick_index.reindex_queue.clear
+
+    contact = Contact.create!(name: "Hi", email: "hi@example.com")
+    contact.reindex
+    Contact.searchkick_index.refresh
+
+    Searchkick.callbacks(false) do
+      contact.update!(name: "Bye", email: "bye@example.com")
+    end
+
+    # Simulate a queue entry from an older Searchkick: bare pipe-delimited id,
+    # no "json:" prefix, no method_name, no ignore_missing. This is the exact
+    # payload that ReindexQueue used to write before the JSON switch.
+    Contact.searchkick_index.reindex_queue.push(contact.id.to_s)
+
+    perform_enqueued_jobs do
+      Searchkick::ProcessQueueJob.perform_now(class_name: "Contact")
+    end
+    Contact.searchkick_index.refresh
+
+    # Legacy entries parse with method_name: nil, so they fall through to a
+    # FULL reindex. Both fields should reflect current DB state.
+    doc = Contact.searchkick_index.retrieve(contact)
+    assert_equal "Bye",             doc["name"]
+    assert_equal "bye@example.com", doc["email"]
   end
 end
