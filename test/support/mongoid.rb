@@ -58,61 +58,6 @@ class Animal
   include Mongoid::Document
 
   field :name
-  field :type
-end
-
-class Sku
-  include Mongoid::Document
-
-  field :name
-end
-
-class Song
-  include Mongoid::Document
-
-  field :name
-end
-
-class Band
-  include Mongoid::Document
-
-  field :name
-  field :active, type: Boolean
-
-  default_scope -> { where(active: true).order(name: 1) }
-end
-
-class Artist
-  include Mongoid::Document
-
-  field :name
-  field :active, type: Boolean
-  field :should_index, type: Boolean
-
-  default_scope -> { where(active: true).order(name: 1) }
-end
-
-class StoreWithDefaultScope
-  include Mongoid::Document
-end
-
-class Region
-  include Mongoid::Document
-
-  field :name
-  field :text
-end
-
-class Speaker
-  include Mongoid::Document
-
-  field :name
-end
-
-class Animal
-  include Mongoid::Document
-
-  field :name
 end
 
 class Dog < Animal
