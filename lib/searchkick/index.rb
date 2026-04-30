@@ -342,7 +342,7 @@ module Searchkick
             index = self
             item.instance_variable_set(
               :@on_missing_full_builder,
-              -> { RecordData.new(index, record).index_data }
+              -> { [RecordData.new(index, record).index_data] }
             )
           end
         end

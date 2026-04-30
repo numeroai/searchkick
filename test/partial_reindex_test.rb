@@ -54,15 +54,15 @@ class PartialReindexTest < Minitest::Test
     assert_match "document missing", error.message
   end
 
-  def test_record_ignore_missing_inline
+  def test_record_on_missing_ignore_inline
     store [{name: "Hi", color: "Blue"}]
 
     product = Product.first
     Product.searchkick_index.remove(product)
 
-    product.reindex(:search_name, ignore_missing: true)
+    product.reindex(:search_name, on_missing: :ignore)
     Searchkick.callbacks(:bulk) do
-      product.reindex(:search_name, ignore_missing: true)
+      product.reindex(:search_name, on_missing: :ignore)
     end
   end
 
@@ -80,14 +80,14 @@ class PartialReindexTest < Minitest::Test
     end
   end
 
-  def test_record_ignore_missing_async
+  def test_record_on_missing_ignore_async
     store [{name: "Hi", color: "Blue"}]
 
     product = Product.first
     Product.searchkick_index.remove(product)
 
     perform_enqueued_jobs do
-      product.reindex(:search_name, mode: :async, ignore_missing: true)
+      product.reindex(:search_name, mode: :async, on_missing: :ignore)
     end
   end
 
@@ -146,13 +146,13 @@ class PartialReindexTest < Minitest::Test
     assert_match "document missing", error.message
   end
 
-  def test_relation_ignore_missing_inline
+  def test_relation_on_missing_ignore_inline
     store [{name: "Hi", color: "Blue"}]
 
     product = Product.first
     Product.searchkick_index.remove(product)
 
-    Product.where(id: product.id).reindex(:search_name, ignore_missing: true)
+    Product.where(id: product.id).reindex(:search_name, on_missing: :ignore)
   end
 
   def test_relation_missing_async
@@ -169,14 +169,141 @@ class PartialReindexTest < Minitest::Test
     end
   end
 
-  def test_relation_ignore_missing_async
+  def test_relation_on_missing_ignore_async
     store [{name: "Hi", color: "Blue"}]
 
     product = Product.first
     Product.searchkick_index.remove(product)
 
     perform_enqueued_jobs do
-      Product.where(id: product.id).reindex(:search_name, mode: :async, ignore_missing: true)
+      Product.where(id: product.id).reindex(:search_name, mode: :async, on_missing: :ignore)
+    end
+  end
+
+  def test_ignore_missing_deprecated
+    store [{name: "Hi", color: "Blue"}]
+    product = Product.first
+    Product.searchkick_index.remove(product)
+
+    assert_warns("ignore_missing is deprecated, use on_missing: :ignore instead") do
+      product.reindex(:search_name, ignore_missing: true)
+    end
+  end
+
+  def test_record_on_missing_raise_explicit
+    store [{name: "Hi", color: "Blue"}]
+    product = Product.first
+    Product.searchkick_index.remove(product)
+
+    error = assert_raises(Searchkick::ImportError) do
+      product.reindex(:search_name, on_missing: :raise)
+    end
+    assert_match "document missing", error.message
+  end
+
+  def test_record_on_missing_full_inline
+    store [{name: "Hi", color: "Blue"}]
+    product = Product.first
+    Product.searchkick_index.remove(product)
+    Searchkick.callbacks(false) { product.update!(name: "Bye", color: "Red") }
+
+    product.reindex(:search_name, on_missing: :full, refresh: true)
+
+    # Both the partial method's field AND the non-method field should be indexed
+    assert_search "bye", ["Bye"], fields: [:name], load: false
+    assert_search "red", ["Bye"], fields: [:color], load: false
+  end
+
+  def test_record_on_missing_full_async
+    store [{name: "Hi", color: "Blue"}]
+    product = Product.first
+    Product.searchkick_index.remove(product)
+    Searchkick.callbacks(false) { product.update!(name: "Bye", color: "Red") }
+
+    perform_enqueued_jobs do
+      product.reindex(:search_name, mode: :async, on_missing: :full)
+    end
+    Product.searchkick_index.refresh
+
+    assert_search "bye", ["Bye"], fields: [:name], load: false
+    assert_search "red", ["Bye"], fields: [:color], load: false
+  end
+
+  def test_relation_on_missing_full_inline
+    store [{name: "Hi", color: "Blue"}]
+    product = Product.first
+    Product.searchkick_index.remove(product)
+    Searchkick.callbacks(false) { product.update!(name: "Bye", color: "Red") }
+
+    Product.where(id: product.id).reindex(:search_name, on_missing: :full)
+    Product.searchkick_index.refresh
+
+    assert_search "bye", ["Bye"], fields: [:name], load: false
+    assert_search "red", ["Bye"], fields: [:color], load: false
+  end
+
+  def test_relation_on_missing_full_async
+    store [{name: "Hi", color: "Blue"}]
+    product = Product.first
+    Product.searchkick_index.remove(product)
+    Searchkick.callbacks(false) { product.update!(name: "Bye", color: "Red") }
+
+    perform_enqueued_jobs do
+      Product.where(id: product.id).reindex(:search_name, mode: :async, on_missing: :full)
+    end
+    Product.searchkick_index.refresh
+
+    assert_search "bye", ["Bye"], fields: [:name], load: false
+    assert_search "red", ["Bye"], fields: [:color], load: false
+  end
+
+  def test_on_missing_full_mixed_batch
+    store [{name: "Present", color: "Blue"}, {name: "Missing", color: "Blue"}]
+    present = Product.find_by!(name: "Present")
+    missing = Product.find_by!(name: "Missing")
+
+    Product.searchkick_index.remove(missing)
+    Searchkick.callbacks(false) do
+      present.update!(name: "PresentUpdated", color: "Red")
+      missing.update!(name: "MissingUpdated", color: "Red")
+    end
+
+    Product.where(id: [present.id, missing.id]).reindex(:search_name, on_missing: :full)
+    Product.searchkick_index.refresh
+
+    # Both records' partial-method field (name) reflects the new value
+    assert_search "presentupdated", ["PresentUpdated"], fields: [:name], load: false
+    assert_search "missingupdated", ["MissingUpdated"], fields: [:name], load: false
+
+    # PRESENT doc only got a partial update — color stays Blue
+    assert_search "blue", ["PresentUpdated"], fields: [:color], load: false
+
+    # MISSING doc got a :full upsert — color is the new Red
+    assert_search "red", ["MissingUpdated"], fields: [:color], load: false
+  end
+
+  def test_on_missing_invalid_value
+    product = Product.create!(name: "Hi")
+    error = assert_raises(ArgumentError) do
+      product.reindex(:search_name, on_missing: :ful)
+    end
+    assert_match "on_missing", error.message
+    assert_match ":raise", error.message  # error message lists valid options
+  end
+
+  def test_on_missing_and_ignore_missing_conflict
+    product = Product.create!(name: "Hi")
+    assert_raises(ArgumentError) do
+      product.reindex(:search_name, on_missing: :ignore, ignore_missing: true)
+    end
+  end
+
+  def test_on_missing_and_ignore_missing_false_conflict
+    # Even ignore_missing: false (the no-op default) conflicts when on_missing is set —
+    # unambiguous migration semantic
+    product = Product.create!(name: "Hi")
+    assert_raises(ArgumentError) do
+      product.reindex(:search_name, on_missing: :raise, ignore_missing: false)
     end
   end
 end
