@@ -281,9 +281,10 @@ module Searchkick
       raise ArgumentError, "Cannot pass both on_missing and ignore_missing"
     end
 
-    if !ignore_missing.nil?
-      Searchkick.warn "ignore_missing is deprecated, use on_missing: :ignore instead of ignore_missing: true 
-      or on_missing: :raise instead of ignore_missing: false"
+    if !ignore_missing.nil? 
+      if ignore_missing == true
+        Searchkick.warn "ignore_missing is deprecated, use on_missing: :ignore instead of ignore_missing: true"
+      end
       return ignore_missing ? :ignore : :raise
     end
 
