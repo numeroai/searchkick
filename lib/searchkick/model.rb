@@ -56,7 +56,7 @@ module Searchkick
         def should_index?
           true
         end unless base.method_defined?(:should_index?)
-    end
+      end
 
       class_eval do
         cattr_reader :searchkick_options, :searchkick_klass, instance_reader: false

@@ -42,8 +42,7 @@ module Searchkick
         end
 
         if first_with_error
-          raise ImportError,
-          "#{first_with_error["error"]} on item with id '#{first_with_error["_id"]}'"
+          raise ImportError, "#{first_with_error["error"]} on item with id '#{first_with_error["_id"]}'"
         end
       end
 
