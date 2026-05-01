@@ -282,7 +282,8 @@ module Searchkick
     end
 
     if !ignore_missing.nil?
-      Searchkick.warn "ignore_missing is deprecated, use on_missing: :ignore instead"
+      Searchkick.warn "ignore_missing is deprecated, use on_missing: :ignore instead of ignore_missing: true 
+      or on_missing: :raise instead of ignore_missing: false"
       return ignore_missing ? :ignore : :raise
     end
 
