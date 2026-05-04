@@ -209,7 +209,6 @@ class PartialReindexTest < Minitest::Test
 
     product.reindex(:search_name, on_missing: :full, refresh: true)
 
-    # Both the partial method's field AND the non-method field should be indexed
     assert_search "bye", ["Bye"], fields: [:name], load: false
     assert_search "red", ["Bye"], fields: [:color], load: false
   end
@@ -271,14 +270,11 @@ class PartialReindexTest < Minitest::Test
     Product.where(id: [present.id, missing.id]).reindex(:search_name, on_missing: :full)
     Product.searchkick_index.refresh
 
-    # Both records' partial-method field (name) reflects the new value
     assert_search "presentupdated", ["PresentUpdated"], fields: [:name], load: false
     assert_search "missingupdated", ["MissingUpdated"], fields: [:name], load: false
 
-    # PRESENT doc only got a partial update — color stays Blue
     assert_search "blue", ["PresentUpdated"], fields: [:color], load: false
 
-    # MISSING doc got a :full upsert — color is the new Red
     assert_search "red", ["MissingUpdated"], fields: [:color], load: false
   end
 
@@ -335,7 +331,7 @@ class PartialReindexTest < Minitest::Test
       product.reindex(:search_name, on_missing: :ful)
     end
     assert_match "on_missing", error.message
-    assert_match ":raise", error.message  # error message lists valid options
+    assert_match ":raise", error.message
   end
 
   def test_on_missing_and_ignore_missing_conflict
@@ -346,8 +342,6 @@ class PartialReindexTest < Minitest::Test
   end
 
   def test_on_missing_and_ignore_missing_false_conflict
-    # Even ignore_missing: false (the no-op default) conflicts when on_missing is set —
-    # unambiguous migration semantic
     product = Product.create!(name: "Hi")
     assert_raises(ArgumentError) do
       product.reindex(:search_name, on_missing: :raise, ignore_missing: false)
