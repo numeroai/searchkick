@@ -282,6 +282,53 @@ class PartialReindexTest < Minitest::Test
     assert_search "red", ["MissingUpdated"], fields: [:color], load: false
   end
 
+  def test_on_missing_full_mixed_with_other_error
+    store [
+      {name: "Present", color: "Blue"},
+      {name: "Missing", color: "Blue"},
+      {name: "Error",   color: "Blue"}
+    ]
+    present = Product.find_by!(name: "Present")
+    missing = Product.find_by!(name: "Missing")
+    error     = Product.find_by!(name: "Error")
+
+    Product.searchkick_index.remove(missing)
+
+    Searchkick.callbacks(false) do
+      present.update!(name: "PresentUpdated", color: "Red")
+      missing.update!(name: "MissingUpdated", color: "Red")
+      error.update!(name: "ErrorUpdated", color: "Red")
+    end
+
+    # ES will reject with mapper_parsing_exception
+    Product.class_eval do
+      alias_method :__orig_search_name, :search_name
+      define_method(:search_name) do
+        self.name == "ErrorUpdated" ? {name: {nested: "x"}} : __orig_search_name
+      end
+    end
+
+    begin
+      error = assert_raises(Searchkick::ImportError) do
+        Product.where(id: [present.id, missing.id, error.id])
+          .reindex(:search_name, on_missing: :full)
+      end
+    end
+    
+    refute_match "document_missing", error.message
+    assert_match(/mapper|parsing|illegal/i, error.message)
+
+    Product.searchkick_index.refresh
+
+    assert_search "missingupdated", ["MissingUpdated"], fields: [:name], load: false
+    assert_search "red",            ["MissingUpdated"], fields: [:color], load: false
+  ensure
+    Product.class_eval do
+      alias_method :search_name, :__orig_search_name
+      remove_method :__orig_search_name
+    end
+  end
+
   def test_on_missing_invalid_value
     product = Product.create!(name: "Hi")
     error = assert_raises(ArgumentError) do
