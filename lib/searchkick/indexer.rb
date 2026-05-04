@@ -40,15 +40,15 @@ module Searchkick
 
           first_with_error ||= action
         end
-
-        if first_with_error
-          raise ImportError, "#{first_with_error["error"]} on item with id '#{first_with_error["_id"]}'"
-        end
       end
 
       if retry_items.any?
         @queued_items = retry_items
         perform
+      end
+
+      if first_with_error
+          raise ImportError, "#{first_with_error["error"]} on item with id '#{first_with_error["_id"]}'"
       end
 
       nil
