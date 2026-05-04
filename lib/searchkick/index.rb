@@ -336,8 +336,9 @@ module Searchkick
       items = records.map { |r| RecordData.new(self, r).update_data(method_name) }
       if on_missing && on_missing != :raise
         items.each_with_index do |item, i|
-          item.instance_variable_set(:@on_missing, on_missing)
-          if on_missing == :full
+          if on_missing == :ignore
+            item.instance_variable_set(:@on_missing_ignore, true)
+          elsif on_missing == :full
             record = records[i]
             index = self
             item.instance_variable_set(

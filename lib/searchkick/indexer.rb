@@ -28,15 +28,14 @@ module Searchkick
           next unless action["error"]
 
           missing = action["error"]["type"] == "document_missing_exception"
-          mode = items[i].instance_variable_get(:@on_missing)
+          full_reindex_builder = items[i].instance_variable_get(:@on_missing_full_builder)
+          ignore = items[i].instance_variable_get(:@on_missing_ignore)
 
-          if missing && mode == :ignore
-            next
-          elsif missing && mode == :full
-            builder = items[i].instance_variable_get(:@on_missing_full_builder)
-            retry_items.concat(builder.call) if builder
+          if missing && full_reindex_builder
+            retry_items.concat(full_reindex_builder.call)
             next
           end
+          next if missing && ignore
 
           first_with_error ||= action
         end
