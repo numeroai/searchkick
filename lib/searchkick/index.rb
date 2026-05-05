@@ -334,7 +334,7 @@ module Searchkick
 
     def queue_update(records, method_name, on_missing:)
       items = records.map { |r| RecordData.new(self, r).update_data(method_name) }
-      unless on_missing == :raise
+      if on_missing && on_missing != :raise
         items.each_with_index do |item, i|
           case on_missing
           when :ignore
