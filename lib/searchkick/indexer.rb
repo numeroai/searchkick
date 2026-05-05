@@ -23,15 +23,15 @@ module Searchkick
       first_with_error = nil
 
       if response["errors"]
-        response["items"].each do |item|
+        response["items"].each_with_index do |item, i|
           action = item["index"] || item["delete"] || item["update"]
           next unless action["error"]
 
           missing = action["error"]["type"] == "document_missing_exception"
-          full_reindex_builder = item.instance_variable_get(:@on_missing_full_builder)
-          ignore = item.instance_variable_get(:@on_missing_ignore)
+          full_reindex_builder = items[i].instance_variable_get(:@on_missing_full_builder)
+          ignore = items[i].instance_variable_get(:@on_missing_ignore)
 
-          if missing 
+          if missing
             next if ignore
             if full_reindex_builder
               retry_items.concat(full_reindex_builder.call)
@@ -49,7 +49,7 @@ module Searchkick
       end
 
       if first_with_error
-          raise ImportError, "#{first_with_error["error"]} on item with id '#{first_with_error["_id"]}'"
+        raise ImportError, "#{first_with_error["error"]} on item with id '#{first_with_error["_id"]}'"
       end
 
       nil
