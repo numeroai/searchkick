@@ -16,28 +16,41 @@ module Searchkick
     def perform
       items = @queued_items
       @queued_items = []
-
       return if items.empty?
 
       response = Searchkick.client.bulk(body: items)
+      retry_items = []
+      first_with_error = nil
+
       if response["errors"]
-        # note: delete does not set error when item not found
-        first_with_error = response["items"].map do |item|
-          (item["index"] || item["delete"] || item["update"])
-        end.find.with_index { |item, i| item["error"] && !ignore_missing?(items[i], item["error"]) }
-        if first_with_error
-          raise ImportError, "#{first_with_error["error"]} on item with id '#{first_with_error["_id"]}'"
+        response["items"].each_with_index do |resp, i|
+          action = resp["index"] || resp["delete"] || resp["update"]
+          next unless action["error"]
+
+          missing = action["error"]["type"] == "document_missing_exception"
+          full_reindex_builder = items[i].instance_variable_get(:@on_missing_full_builder)
+          ignore = items[i].instance_variable_get(:@on_missing_ignore)
+
+          if missing && full_reindex_builder
+            retry_items.concat(full_reindex_builder.call)
+            next
+          end
+          next if missing && ignore
+
+          first_with_error ||= action
         end
       end
 
-      # maybe return response in future
+      if retry_items.any?
+        @queued_items = retry_items
+        perform
+      end
+
+      if first_with_error
+          raise ImportError, "#{first_with_error["error"]} on item with id '#{first_with_error["_id"]}'"
+      end
+
       nil
-    end
-
-    private
-
-    def ignore_missing?(item, error)
-      error["type"] == "document_missing_exception" && item.instance_variable_defined?(:@ignore_missing)
     end
   end
 end
