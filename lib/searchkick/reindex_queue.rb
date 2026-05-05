@@ -15,7 +15,7 @@ module Searchkick
       Searchkick.with_redis { |r| r.call("LPUSH", redis_key, record_ids) }
     end
 
-    def push_records(records, method_name: nil, ignore_missing: nil)
+    def push_records(records, method_name: nil, on_missing: nil)
       record_ids =
         records.map do |record|
           # always pass routing in case record is deleted
@@ -26,7 +26,7 @@ module Searchkick
             record.id,
             routing:,
             method_name:,
-            ignore_missing:
+            on_missing:
           )
         end
 
@@ -52,11 +52,11 @@ module Searchkick
       "searchkick:reindex_queue:#{name}"
     end
 
-    def serialize_record(record_id, routing:, method_name:, ignore_missing:)
+    def serialize_record(record_id, routing:, method_name:, on_missing:)
       payload = {"id" => record_id.to_s}
       payload["routing"] = routing.to_s if routing
       payload["method_name"] = method_name.to_s if method_name
-      payload["ignore_missing"] = true if ignore_missing
+      payload["on_missing"] = on_missing.to_s if on_missing
       "json:#{JSON.generate(payload)}"
     end
 

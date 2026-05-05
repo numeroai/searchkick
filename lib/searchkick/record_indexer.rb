@@ -54,7 +54,7 @@ module Searchkick
           )
         end
       when :queue
-        index.reindex_queue.push_records(records, method_name:, ignore_missing:)
+        index.reindex_queue.push_records(records, method_name:, on_missing:)
       when true, :inline
         index_records, other_records = records.partition { |r| index_record?(r) }
         import_inline(index_records, !full ? other_records : [], method_name: method_name, on_missing: on_missing, single: single)
