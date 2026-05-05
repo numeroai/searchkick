@@ -19,7 +19,7 @@ module Searchkick
       relation = Searchkick.scope(model)
 
       items.group_by { |i| [i[:method_name], i[:on_missing]] }.each do |(method_name, on_missing), method_items|
-        RecordIndexer.new(index).reindex_items(relation, method_items, method_name:, on_missing:)
+        RecordIndexer.new(index).reindex_items(relation, method_items, method_name:, on_missing: on_missing.is_a?(String) ? on_missing.to_sym : on_missing)
       end
     end
   end
