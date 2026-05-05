@@ -189,7 +189,6 @@ class PartialReindexTest < Minitest::Test
     carol.update!(name: "Carol-new", email: "carol-new@example.com")
   end
 
-  # Reindex only alice + bob via relation; carol should be untouched.
   Contact.where(id: [alice.id, bob.id]).reindex(:search_name, mode: :queue)
 
   perform_enqueued_jobs do
@@ -201,13 +200,11 @@ class PartialReindexTest < Minitest::Test
   bob_doc   = Contact.searchkick_index.retrieve(bob)
   carol_doc = Contact.searchkick_index.retrieve(carol)
 
-  # In scope: name updated, email preserved
   assert_equal "Alice-new",         alice_doc["name"]
   assert_equal "alice@example.com", alice_doc["email"]
   assert_equal "Bob-new",           bob_doc["name"]
   assert_equal "bob@example.com",   bob_doc["email"]
 
-  # Out of scope: untouched entirely
   assert_equal "Carol",              carol_doc["name"]
   assert_equal "carol@example.com",  carol_doc["email"]
   end
@@ -461,7 +458,6 @@ class PartialReindexTest < Minitest::Test
     [contact_1, contact_2, contact_3].each(&:reindex)
     Contact.searchkick_index.refresh
 
-    # contact_2's doc is missing from the index but still in the DB
     Contact.searchkick_index.remove(contact_2)
     Contact.searchkick_index.refresh
 
@@ -471,10 +467,6 @@ class PartialReindexTest < Minitest::Test
       contact_3.update!(name: "Bye-3", email: "bye-3@example.com")
     end
 
-    # Three queue entries, three distinct group keys:
-    #   [:search_name,  nil ]  -> contact_1
-    #   [:search_email, nil ]  -> contact_1
-    #   [:search_name,  true]  -> contact_2 (missing from index)
     contact_1.reindex(:search_name,  mode: :queue)
     contact_1.reindex(:search_email, mode: :queue)
     contact_2.reindex(:search_name,  mode: :queue, ignore_missing: true)
@@ -485,7 +477,6 @@ class PartialReindexTest < Minitest::Test
     end
     Contact.searchkick_index.refresh
 
-    # contact_1: both :search_name and :search_email groups ran in the same drain
     doc_1 = Contact.searchkick_index.retrieve(contact_1)
     assert_equal "Bye-1",             doc_1["name"]
     assert_equal "bye-1@example.com", doc_1["email"]
@@ -494,8 +485,6 @@ class PartialReindexTest < Minitest::Test
     assert_equal "Bye-3",             doc_3["name"]
     assert_equal "bye-3@example.com", doc_3["email"]
 
-    # contact_2: ignore_missing: true suppressed the "document missing" error;
-    # doc is still absent from the index (no ghost write)
     missing = Contact.search("*", where: {id: contact_2.id}, load: false).hits
     assert_equal 0, missing.length
   end
@@ -511,9 +500,7 @@ class PartialReindexTest < Minitest::Test
       contact.update!(name: "Bye", email: "bye@example.com")
     end
 
-    # Simulate a queue entry from an older Searchkick: bare pipe-delimited id,
-    # no "json:" prefix, no method_name, no ignore_missing. This is the exact
-    # payload that ReindexQueue used to write before the JSON switch.
+    # Simulate a queue entry from an older Searchkick version, no merhod name or on_missing, just "id|routing"
     Contact.searchkick_index.reindex_queue.push(contact.id.to_s)
 
     perform_enqueued_jobs do
@@ -521,8 +508,6 @@ class PartialReindexTest < Minitest::Test
     end
     Contact.searchkick_index.refresh
 
-    # Legacy entries parse with method_name: nil, so they fall through to a
-    # FULL reindex. Both fields should reflect current DB state.
     doc = Contact.searchkick_index.retrieve(contact)
     assert_equal "Bye",             doc["name"]
     assert_equal "bye@example.com", doc["email"]
@@ -532,8 +517,6 @@ class PartialReindexTest < Minitest::Test
     Store.searchkick_index.reindex_queue.clear
 
     store = Store.create!(name: "Store A")
-    # intentionally do NOT reindex via callbacks/explicit call —
-    # the legacy queue entry is the only path that will index this doc
 
     # Simulate a pre-JSON-format entry as written by the old code: "id|routing"
     Store.searchkick_index.reindex_queue.push("#{store.id}|Store A")
@@ -543,8 +526,6 @@ class PartialReindexTest < Minitest::Test
     end
     Store.searchkick_index.refresh
 
-    # Routing survived the legacy-format parse and was used on the Update API write:
-    # the doc is findable on the "Store A" shard, and the search with routing returns it.
     assert_search "*", ["Store A"], {routing: "Store A"}, Store
   end
 end
