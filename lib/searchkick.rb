@@ -277,13 +277,16 @@ module Searchkick
   end
 
   def self.normalize_on_missing(on_missing, ignore_missing)
-    if !ignore_missing.nil? && !on_missing.nil?
+    if ignore_missing.present? && on_missing.present?
       raise ArgumentError, "Cannot pass both on_missing and ignore_missing"
     end
 
-    if !ignore_missing.nil? 
-      if ignore_missing == true
+    if ignore_missing.present?
+      case ignore_missing
+      when true
         Searchkick.warn "ignore_missing is deprecated, use on_missing: :ignore instead of ignore_missing: true"
+      when false
+        Searchkick.warn "ignore_missing is deprecated, use on_missing: :raise instead of ignore_missing: false"
       end
       return ignore_missing ? :ignore : :raise
     end
