@@ -336,15 +336,16 @@ module Searchkick
       items = records.map { |r| RecordData.new(self, r).update_data(method_name) }
       if on_missing && on_missing != :raise
         items.each_with_index do |item, i|
-          if on_missing == :ignore
+          case on_missing
+          when :ignore
             item.instance_variable_set(:@on_missing_ignore, true)
-          elsif on_missing == :full
-            record = records[i]
-            index = self
+          when :full
             item.instance_variable_set(
               :@on_missing_full_builder,
-              -> { [RecordData.new(index, record).index_data] }
+              -> { [RecordData.new(self, records[i]).index_data] }
             )
+          else
+            raise ArgumentError, "Invalid value for on_missing"
           end
         end
       end
