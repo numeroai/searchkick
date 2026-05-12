@@ -342,10 +342,8 @@ module Searchkick
           when :full
             item.instance_variable_set(
               :@on_missing_full_builder,
-              -> { [RecordData.new(self, records[i]).index_data] }
+              -> { RecordData.new(self, records[i]).index_data }
             )
-          else
-            raise ArgumentError, "Invalid value for on_missing"
           end
         end
       end

@@ -23,8 +23,8 @@ module Searchkick
       first_with_error = nil
 
       if response["errors"]
-        response["items"].each_with_index do |item, i|
-          action = item["index"] || item["delete"] || item["update"]
+        response["items"].each_with_index do |resp_item, i|
+          action = resp_item["index"] || resp_item["delete"] || resp_item["update"]
           next unless action["error"]
 
           missing = action["error"]["type"] == "document_missing_exception"
@@ -34,7 +34,7 @@ module Searchkick
           if missing
             next if ignore
             if full_reindex_builder
-              retry_items.concat(full_reindex_builder.call)
+              retry_items << full_reindex_builder.call
               next
             end
           end
@@ -44,8 +44,14 @@ module Searchkick
       end
 
       if retry_items.any?
+        # retry items are full index_data with no @on_missing_full_builder set,
+        # so they cannot trigger another retry — recursion depth is bounded at 1
         @queued_items = retry_items
-        perform
+        begin
+          perform
+        rescue ImportError => retry_error
+          raise retry_error if first_with_error.nil?
+        end
       end
 
       if first_with_error
