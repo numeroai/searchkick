@@ -423,7 +423,6 @@ class PartialReindexTest < Minitest::Test
     end
   end
 
-<<<<<<< HEAD
   def test_relation_missing_queue
     sarah = Contact.create!(name: "Sarah", email: "sarah@example.com")
     Contact.create!(name: "Susan", email: "susan@example.com")
@@ -528,7 +527,8 @@ class PartialReindexTest < Minitest::Test
     Store.searchkick_index.refresh
 
     assert_search "*", ["Store A"], {routing: "Store A"}, Store
-=======
+  end
+  
   def test_on_missing_full_uses_full_reindex_method_name_inline
     store [{name: "Hi", color: "Blue"}]
     product = Product.first
@@ -571,6 +571,5 @@ class PartialReindexTest < Minitest::Test
     assert_search "bye", ["Bye"], fields: [:name], load: false
     # color is unchanged from the original indexed value
     assert_search "blue", ["Bye"], fields: [:color], load: false
->>>>>>> 26ab0a4de1fe49a18d1c6a901fe05a9be7d13885
   end
 end
