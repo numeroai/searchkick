@@ -22,7 +22,6 @@ module Searchkick
         # only add if set for backwards compatibility
         extra_options = {}
         extra_options[:on_missing] = on_missing.to_s if on_missing != :raise
-        extra_options[:full_reindex_method_name] = full_reindex_method_name.to_s if full_reindex_method_name
 
         # we could likely combine ReindexV2Job, BulkReindexJob, and ProcessBatchJob
         # but keep them separate for now
@@ -41,6 +40,7 @@ module Searchkick
             method_name ? method_name.to_s : nil,
             routing: routing,
             index_name: index.name,
+            full_reindex_method_name: full_reindex_method_name ? full_reindex_method_name.to_s : nil,
             **extra_options
           )
         else
@@ -49,12 +49,16 @@ module Searchkick
             record_ids: records.map { |r| r.id.to_s },
             index_name: index.name,
             method_name: method_name ? method_name.to_s : nil,
+            full_reindex_method_name: full_reindex_method_name ? full_reindex_method_name.to_s : nil,
             **extra_options
           )
         end
       when :queue
         if method_name
           raise Error, "Partial reindex not supported with queue option"
+        end
+        if full_reindex_method_name
+          raise Error, "full_reindex_method_name not supported with queue option"
         end
 
         index.reindex_queue.push_records(records)
