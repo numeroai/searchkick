@@ -423,6 +423,7 @@ class PartialReindexTest < Minitest::Test
     end
   end
 
+<<<<<<< HEAD
   def test_relation_missing_queue
     sarah = Contact.create!(name: "Sarah", email: "sarah@example.com")
     Contact.create!(name: "Susan", email: "susan@example.com")
@@ -527,5 +528,49 @@ class PartialReindexTest < Minitest::Test
     Store.searchkick_index.refresh
 
     assert_search "*", ["Store A"], {routing: "Store A"}, Store
+=======
+  def test_on_missing_full_uses_full_reindex_method_name_inline
+    store [{name: "Hi", color: "Blue"}]
+    product = Product.first
+    Product.searchkick_index.remove(product)
+    Searchkick.callbacks(false) { product.update!(name: "Bye", color: "Red") }
+
+    product.reindex(:search_name, on_missing: :full, full_reindex_method_name: :alt_search_data, refresh: true)
+
+    # name comes from alt_search_data (which delegates to search_data), color is overridden to marker
+    assert_search "bye", ["Bye"], fields: [:name], load: false
+    assert_search "altreindexmarker", ["Bye"], fields: [:color], load: false
+  end
+
+  def test_on_missing_full_uses_full_reindex_method_name_async
+    store [{name: "Hi", color: "Blue"}]
+    product = Product.first
+    Product.searchkick_index.remove(product)
+    Searchkick.callbacks(false) { product.update!(name: "Bye", color: "Red") }
+
+    perform_enqueued_jobs do
+      product.reindex(:search_name, mode: :async, on_missing: :full, full_reindex_method_name: :alt_search_data)
+    end
+    Product.searchkick_index.refresh
+
+    assert_search "bye", ["Bye"], fields: [:name], load: false
+    assert_search "altreindexmarker", ["Bye"], fields: [:color], load: false
+  end
+
+  def test_partial_reindex_ignores_full_reindex_method_name
+    store [{name: "Hi", color: "Blue"}]
+
+    product = Product.first
+    Searchkick.callbacks(false) do
+      product.update!(name: "Bye", color: "Red")
+    end
+
+    # explicit partial method wins; full_reindex_method_name is ignored for present docs
+    product.reindex(:search_name, full_reindex_method_name: :alt_search_data, refresh: true)
+
+    assert_search "bye", ["Bye"], fields: [:name], load: false
+    # color is unchanged from the original indexed value
+    assert_search "blue", ["Bye"], fields: [:color], load: false
+>>>>>>> 26ab0a4de1fe49a18d1c6a901fe05a9be7d13885
   end
 end

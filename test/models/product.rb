@@ -57,4 +57,8 @@ class Product
       name: name
     }
   end
+
+  def alt_search_data
+    search_data.merge(color: "AltReindexMarker")
+  end
 end
