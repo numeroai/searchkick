@@ -12,11 +12,18 @@ module Searchkick
             JSON.parse(r[5..-1]).transform_keys(&:to_sym)
           else
             parts = r.split(/(?<!\|)\|(?!\|)/, 2).map { |v| v.gsub("||", "|") }
-            {id: parts[0], routing: parts[1].presence, method_name: nil, on_missing: nil}
+            {id: parts[0], routing: parts[1].presence}
           end
         end
 
       relation = Searchkick.scope(model)
+
+
+      items.group_by { |i| i.except(:id, :routing) }.each do |shared_args, group|
+        shared_args = shared_args.dup
+        shared_args[:on_missing] = shared_args[:on_missing].to_sym if shared_args[:on_missing]
+        RecordIndexer.new(index).reindex_items(relation, group, **shared_args)
+      end
 
       items.group_by { |i| [i[:method_name], i[:on_missing]] }.each do |(method_name, on_missing), method_items|
         RecordIndexer.new(index).reindex_items(relation, method_items, method_name:, on_missing: on_missing.is_a?(String) ? on_missing.to_sym : on_missing)

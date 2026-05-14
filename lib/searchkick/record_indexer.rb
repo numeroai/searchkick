@@ -52,7 +52,10 @@ module Searchkick
           )
         end
       when :queue
-        index.reindex_queue.push_records(records, method_name:, on_missing:)
+        queue_options = {}
+        queue_options[:on_missing] = on_missing if on_missing
+        queue_options[:method_name] = method_name if method_name
+        index.reindex_queue.push_records(records, **queue_options)
       when true, :inline
         index_records, other_records = records.partition { |r| index_record?(r) }
         import_inline(index_records, !full ? other_records : [], method_name: method_name, on_missing: on_missing, single: single)
@@ -64,7 +67,7 @@ module Searchkick
       true
     end
 
-    def reindex_items(klass, items, method_name:, on_missing:, single: false)
+    def reindex_items(klass, items, method_name: nil, on_missing: nil, single: false)
       routing = items.to_h { |r| [r[:id], r[:routing]] }
       record_ids = routing.keys
 
