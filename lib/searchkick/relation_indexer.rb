@@ -147,9 +147,6 @@ module Searchkick
           end
       end
 
-      extra_job_args = {}
-      extra_job_args[:full_reindex_method_name] = full_reindex_method_name.to_s if full_reindex_method_name
-
       if starting_id.nil?
         # no records, do nothing
       elsif starting_id.is_a?(Numeric)
@@ -158,12 +155,12 @@ module Searchkick
 
         batches_count.times do |i|
           min_id = starting_id + (i * batch_size)
-          batch_job(class_name, batch_id, job_options, min_id: min_id, max_id: min_id + batch_size - 1, **extra_job_args)
+          batch_job(class_name, batch_id, job_options, min_id: min_id, max_id: min_id + batch_size - 1, full_reindex_method_name: full_reindex_method_name)
           batch_id += 1
         end
       else
         in_batches(relation) do |items|
-          batch_job(class_name, batch_id, job_options, record_ids: items.map(&:id).map { |v| v.instance_of?(Integer) ? v : v.to_s }, **extra_job_args)
+          batch_job(class_name, batch_id, job_options, record_ids: items.map(&:id).map { |v| v.instance_of?(Integer) ? v : v.to_s }, full_reindex_method_name: full_reindex_method_name)
           batch_id += 1
         end
       end
