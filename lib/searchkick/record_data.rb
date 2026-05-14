@@ -9,9 +9,9 @@ module Searchkick
       @record = record
     end
 
-    def index_data
+    def index_data(full_reindex_method_name: nil)
       data = record_data
-      data[:data] = search_data
+      data[:data] = search_data(full_reindex_method_name: full_reindex_method_name)
       {index: data}
     end
 
@@ -46,10 +46,10 @@ module Searchkick
 
     private
 
-    def search_data(method_name = nil)
+    def search_data(method_name = nil, full_reindex_method_name: nil)
       partial_reindex = !method_name.nil?
 
-      source = record.send(method_name || :search_data)
+      source = record.send(method_name || full_reindex_method_name || :search_data)
 
       # conversions
       index.conversions_fields.each do |conversions_field|
