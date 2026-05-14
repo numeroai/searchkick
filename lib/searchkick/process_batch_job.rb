@@ -19,10 +19,10 @@ module Searchkick
       relation = Searchkick.scope(model)
 
 
-      items.group_by { |i| i.except(:id, :routing) }.each do |shared_args, group|
-        shared_args = shared_args.dup
-        shared_args[:on_missing] = shared_args[:on_missing].to_sym if shared_args[:on_missing]
-        RecordIndexer.new(index).reindex_items(relation, group, **shared_args)
+      items.group_by { |i| i.except(:id, :routing) }.each do |extra_options, batched_items|
+        extra_options = extra_options.dup
+        extra_options[:on_missing] = extra_options[:on_missing].to_sym if extra_options[:on_missing]
+        RecordIndexer.new(index).reindex_items(relation, batched_items, **extra_options)
       end
 
       items.group_by { |i| [i[:method_name], i[:on_missing]] }.each do |(method_name, on_missing), method_items|
