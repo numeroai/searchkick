@@ -377,6 +377,7 @@ class ReindexTest < Minitest::Test
     store_names ["Product A", "Product B"], reindex: false
 
     Product.reindex(full_reindex_method_name: :alt_search_data)
+    Product.searchkick_index.refresh
 
     assert_search "altreindexmarker", ["Product A", "Product B"], fields: [:color], load: false
   end
