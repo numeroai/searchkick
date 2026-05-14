@@ -6,7 +6,7 @@ module Searchkick
       @index = index
     end
 
-    def reindex(records, mode:, method_name:, on_missing:, full: false, single: false, job_options: nil)
+    def reindex(records, mode:, method_name:, on_missing:, full: false, single: false, full_reindex_method_name: nil, job_options: nil)
       # prevents exists? check if records is a relation
       records = records.to_a
       return if records.empty?
@@ -22,6 +22,7 @@ module Searchkick
         # only add if set for backwards compatibility
         extra_options = {}
         extra_options[:on_missing] = on_missing.to_s if on_missing != :raise
+        extra_options[:full_reindex_method_name] = full_reindex_method_name.to_s if full_reindex_method_name
 
         # we could likely combine ReindexV2Job, BulkReindexJob, and ProcessBatchJob
         # but keep them separate for now
@@ -59,7 +60,7 @@ module Searchkick
         index.reindex_queue.push_records(records)
       when true, :inline
         index_records, other_records = records.partition { |r| index_record?(r) }
-        import_inline(index_records, !full ? other_records : [], method_name: method_name, on_missing: on_missing, single: single)
+        import_inline(index_records, !full ? other_records : [], method_name: method_name, on_missing: on_missing, single: single, full_reindex_method_name: full_reindex_method_name)
       else
         raise ArgumentError, "Invalid value for mode"
       end
@@ -68,7 +69,7 @@ module Searchkick
       true
     end
 
-    def reindex_items(klass, items, method_name:, on_missing:, single: false)
+    def reindex_items(klass, items, method_name:, on_missing:, single: false, full_reindex_method_name: nil)
       routing = items.to_h { |r| [r[:id], r[:routing]] }
       record_ids = routing.keys
 
@@ -84,7 +85,7 @@ module Searchkick
           construct_record(klass, id, routing[id])
         end
 
-      import_inline(records, delete_records, method_name: method_name, on_missing: on_missing, single: single)
+      import_inline(records, delete_records, method_name: method_name, on_missing: on_missing, single: single, full_reindex_method_name: full_reindex_method_name)
     end
 
     private
@@ -94,15 +95,15 @@ module Searchkick
     end
 
     # import in single request with retries
-    def import_inline(index_records, delete_records, method_name:, on_missing:, single:)
+    def import_inline(index_records, delete_records, method_name:, on_missing:, single:, full_reindex_method_name: nil)
       return if index_records.empty? && delete_records.empty?
 
       maybe_bulk(index_records, delete_records, method_name, single) do
         if index_records.any?
           if method_name
-            index.bulk_update(index_records, method_name, on_missing: on_missing)
+            index.bulk_update(index_records, method_name, on_missing: on_missing, full_reindex_method_name: full_reindex_method_name)
           else
-            index.bulk_index(index_records)
+            index.bulk_index(index_records, full_reindex_method_name: full_reindex_method_name)
           end
         end
 

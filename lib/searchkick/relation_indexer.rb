@@ -6,7 +6,7 @@ module Searchkick
       @index = index
     end
 
-    def reindex(relation, mode:, method_name: nil, on_missing: nil, full: false, resume: false, scope: nil, job_options: nil)
+    def reindex(relation, mode:, method_name: nil, on_missing: nil, full: false, resume: false, scope: nil, full_reindex_method_name: nil, job_options: nil)
       # apply scopes
       if scope
         relation = relation.send(scope)
@@ -29,7 +29,7 @@ module Searchkick
       end
 
       if mode == :async && full
-        return full_reindex_async(relation, job_options: job_options)
+        return full_reindex_async(relation, full_reindex_method_name: full_reindex_method_name, job_options: job_options)
       end
 
       relation = resume_relation(relation) if resume
@@ -39,6 +39,7 @@ module Searchkick
         method_name: method_name,
         full: full,
         on_missing: on_missing,
+        full_reindex_method_name: full_reindex_method_name,
         job_options: job_options
       }
       record_indexer = RecordIndexer.new(index)
@@ -130,7 +131,7 @@ module Searchkick
       @batch_size ||= index.options[:batch_size] || 1000
     end
 
-    def full_reindex_async(relation, job_options: nil)
+    def full_reindex_async(relation, full_reindex_method_name: nil, job_options: nil)
       batch_id = 1
       class_name = relation.searchkick_options[:class_name]
       starting_id = false
@@ -146,6 +147,9 @@ module Searchkick
           end
       end
 
+      extra_job_args = {}
+      extra_job_args[:full_reindex_method_name] = full_reindex_method_name.to_s if full_reindex_method_name
+
       if starting_id.nil?
         # no records, do nothing
       elsif starting_id.is_a?(Numeric)
@@ -154,12 +158,12 @@ module Searchkick
 
         batches_count.times do |i|
           min_id = starting_id + (i * batch_size)
-          batch_job(class_name, batch_id, job_options, min_id: min_id, max_id: min_id + batch_size - 1)
+          batch_job(class_name, batch_id, job_options, min_id: min_id, max_id: min_id + batch_size - 1, **extra_job_args)
           batch_id += 1
         end
       else
         in_batches(relation) do |items|
-          batch_job(class_name, batch_id, job_options, record_ids: items.map(&:id).map { |v| v.instance_of?(Integer) ? v : v.to_s })
+          batch_job(class_name, batch_id, job_options, record_ids: items.map(&:id).map { |v| v.instance_of?(Integer) ? v : v.to_s }, **extra_job_args)
           batch_id += 1
         end
       end

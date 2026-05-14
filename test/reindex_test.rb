@@ -363,4 +363,48 @@ class ReindexTest < Minitest::Test
     Product.reindex
     Product.reindex # run twice for both index paths
   end
+
+  def test_full_reindex_method_name_record
+    store_names ["Product A"], reindex: false
+
+    product = Product.find_by!(name: "Product A")
+    product.reindex(full_reindex_method_name: :alt_search_data, refresh: true)
+
+    assert_search "altreindexmarker", ["Product A"], fields: [:color], load: false
+  end
+
+  def test_full_reindex_method_name_relation
+    store_names ["Product A", "Product B"], reindex: false
+
+    Product.reindex(full_reindex_method_name: :alt_search_data)
+
+    assert_search "altreindexmarker", ["Product A", "Product B"], fields: [:color], load: false
+  end
+
+  def test_full_reindex_method_name_record_async
+    store_names ["Product A"], reindex: false
+
+    product = Product.find_by!(name: "Product A")
+    perform_enqueued_jobs do
+      product.reindex(mode: :async, full_reindex_method_name: :alt_search_data)
+    end
+    Product.searchkick_index.refresh
+
+    assert_search "altreindexmarker", ["Product A"], fields: [:color], load: false
+  end
+
+  def test_full_reindex_method_name_relation_async
+    store_names ["Product A"], reindex: false
+
+    reindex = nil
+    perform_enqueued_jobs do
+      reindex = Product.reindex(mode: :async, full_reindex_method_name: :alt_search_data)
+    end
+
+    index = Searchkick::Index.new(reindex[:index_name])
+    index.refresh
+    Product.searchkick_index.promote(reindex[:index_name])
+
+    assert_search "altreindexmarker", ["Product A"], fields: [:color], load: false
+  end
 end
