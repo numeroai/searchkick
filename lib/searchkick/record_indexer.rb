@@ -21,7 +21,7 @@ module Searchkick
 
         # only add if set for backwards compatibility
         extra_options = {}
-        extra_options[:on_missing] = on_missing.to_s if on_missing != :raise
+        extra_options[:on_missing] = on_missing.to_s if on_missing && on_missing != :raise
 
         # we could likely combine ReindexV2Job, BulkReindexJob, and ProcessBatchJob
         # but keep them separate for now

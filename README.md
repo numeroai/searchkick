@@ -810,7 +810,7 @@ class UpdateConversionsJob < ApplicationJob
 
       if reindex
         # reindex conversions data
-        model.where(id: ids).reindex(:conversions_data, ignore_missing: true)
+        model.where(id: ids).reindex(:conversions_data, on_missing: :ignore)
       end
     end
   end
@@ -1731,7 +1731,13 @@ Product.reindex(:prices_data)
 Ignore errors for missing documents with:
 
 ```ruby
-Product.reindex(:prices_data, ignore_missing: true)
+Product.reindex(:prices_data, on_missing: :ignore)
+```
+
+Fully reindex missing documents with:
+
+```ruby
+Product.reindex(:prices_data, on_missing: :full)
 ```
 
 ## Advanced

@@ -282,7 +282,7 @@ module Searchkick
     end
 
     # Use a nil check instead of present? to distinguish between ignore_missing: nil (unset),
-    # ignore_missing: true, and ignore_missing: false. 
+    # ignore_missing: true, and ignore_missing: false.
     if !ignore_missing.nil?
       case ignore_missing
       when true

@@ -47,15 +47,18 @@ module Searchkick
         # retry items are full index_data with no @on_missing_full_builder set,
         # so they cannot trigger another retry — recursion depth is bounded at 1
         @queued_items = retry_items
+        retry_error = nil
         begin
           perform
         rescue ImportError => retry_error
-          raise retry_error if first_with_error.nil?
         end
+        raise retry_error if retry_error && first_with_error.nil?
       end
 
       if first_with_error
-        raise ImportError, "#{first_with_error["error"]} on item with id '#{first_with_error["_id"]}'"
+        message = "#{first_with_error["error"]} on item with id '#{first_with_error["_id"]}'"
+        message = "#{message}; additionally, full reindex retry failed: #{retry_error.message}" if retry_error
+        raise ImportError, message
       end
 
       nil
