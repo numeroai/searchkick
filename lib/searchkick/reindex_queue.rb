@@ -59,9 +59,5 @@ module Searchkick
       end
       "json:#{JSON.generate(payload)}"
     end
-
-    def escape(value)
-      value.to_s.gsub("|", "||")
-    end
   end
 end
