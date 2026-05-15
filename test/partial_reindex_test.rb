@@ -112,7 +112,7 @@ class PartialReindexTest < Minitest::Test
     Contact.searchkick_index.remove(contact)
 
 
-    contact.reindex(:search_name, mode: :queue, ignore_missing: false)
+    contact.reindex(:search_name, mode: :queue, on_missing: :raise)
 
     error = assert_raises(Searchkick::ImportError) do
       Searchkick::ProcessQueueJob.perform_now(class_name: "Contact", inline: true)
@@ -125,7 +125,7 @@ class PartialReindexTest < Minitest::Test
     Contact.searchkick_index.remove(contact)
 
 
-    contact.reindex(:search_name, mode: :queue, ignore_missing: true)
+    contact.reindex(:search_name, mode: :queue, on_missing: :ignore)
 
     perform_enqueued_jobs do
       Searchkick::ProcessQueueJob.perform_now(class_name: "Contact", inline: true)
@@ -428,7 +428,7 @@ class PartialReindexTest < Minitest::Test
     Contact.create!(name: "Susan", email: "susan@example.com")
     Contact.searchkick_index.remove(sarah)
 
-    Contact.reindex(:search_name, mode: :queue, ignore_missing: false)
+    Contact.reindex(:search_name, mode: :queue, on_missing: :raise)
 
     error = assert_raises(Searchkick::ImportError) do
       Searchkick::ProcessQueueJob.perform_now(class_name: "Contact", inline: true)
@@ -442,7 +442,7 @@ class PartialReindexTest < Minitest::Test
     Contact.searchkick_index.remove(sarah)
 
 
-    Contact.reindex(:search_name, mode: :queue, ignore_missing: true)
+    Contact.reindex(:search_name, mode: :queue, on_missing: :ignore)
 
     perform_enqueued_jobs do
       Searchkick::ProcessQueueJob.perform_now(class_name: "Contact", inline: true)
@@ -469,7 +469,7 @@ class PartialReindexTest < Minitest::Test
 
     contact_1.reindex(:search_name,  mode: :queue)
     contact_1.reindex(:search_email, mode: :queue)
-    contact_2.reindex(:search_name,  mode: :queue, ignore_missing: true)
+    contact_2.reindex(:search_name,  mode: :queue, on_missing: :ignore)
     contact_3.reindex(mode: :queue)
 
     perform_enqueued_jobs do
@@ -500,7 +500,7 @@ class PartialReindexTest < Minitest::Test
       contact.update!(name: "Bye", email: "bye@example.com")
     end
 
-    # Simulate a queue entry from an older Searchkick version, no merhod name or on_missing, just "id|routing"
+    # Simulate a queue entry from an older Searchkick version, no method name or on_missing, just "id|routing"
     Contact.searchkick_index.reindex_queue.push(contact.id.to_s)
 
     perform_enqueued_jobs do
