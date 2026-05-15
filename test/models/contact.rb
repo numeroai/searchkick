@@ -6,7 +6,6 @@ class Contact
     word_start: [:name, :email],
     word_middle: [:name, :email],
     word_end: [:name, :email]
-    
 
   def search_data
     search_name.merge(search_email)

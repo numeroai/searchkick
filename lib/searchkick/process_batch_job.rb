@@ -9,7 +9,8 @@ module Searchkick
       items =
         record_ids.map do |r|
           if r.start_with?("json:")
-            JSON.parse(r[5..-1]).transform_keys(&:to_sym)
+            r.delete_prefix!("json:")
+            JSON.parse(r).transform_keys(&:to_sym)
           else
             parts = r.split(/(?<!\|)\|(?!\|)/, 2).map { |v| v.gsub("||", "|") }
             {id: parts[0], routing: parts[1].presence}
@@ -17,7 +18,6 @@ module Searchkick
         end
 
       relation = Searchkick.scope(model)
-
 
       items.group_by { |i| i.except(:id, :routing) }.each do |extra_options, batched_items|
         extra_options = extra_options.dup

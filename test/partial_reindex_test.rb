@@ -35,27 +35,26 @@ class PartialReindexTest < Minitest::Test
   end
 
   def test_record_queue
-  Contact.searchkick_index.reindex_queue.clear
+    Contact.searchkick_index.reindex_queue.clear
 
-  contact = Contact.create!(name: "Hi", email: "hi@example.com")
-  contact.reindex
-  Contact.searchkick_index.refresh
+    contact = Contact.create!(name: "Hi", email: "hi@example.com")
+    contact.reindex
+    Contact.searchkick_index.refresh
 
-  Searchkick.callbacks(false) do
-    contact.update!(name: "Bye", email: "bye@example.com")
-  end
-  Contact.searchkick_index.refresh
+    Searchkick.callbacks(false) do
+      contact.update!(name: "Bye", email: "bye@example.com")
+    end
+    Contact.searchkick_index.refresh
 
+    contact.reindex(:search_name, mode: :queue)
+    perform_enqueued_jobs do
+      Searchkick::ProcessQueueJob.perform_now(class_name: "Contact")
+    end
+    Contact.searchkick_index.refresh
 
-  contact.reindex(:search_name, mode: :queue)
-  perform_enqueued_jobs do
-    Searchkick::ProcessQueueJob.perform_now(class_name: "Contact")
-  end
-  Contact.searchkick_index.refresh
-  
-  doc = Contact.search("*", where: {id: contact.id}, load: false).hits.first["_source"]
-  assert_equal "Bye", doc["name"]
-  assert_equal "hi@example.com", doc["email"]
+    doc = Contact.search("*", where: {id: contact.id}, load: false).hits.first["_source"]
+    assert_equal "Bye", doc["name"]
+    assert_equal "hi@example.com", doc["email"]
   end
 
   def test_record_missing_inline
@@ -351,16 +350,16 @@ class PartialReindexTest < Minitest::Test
       {name: "Missing", color: "Blue"},
       {name: "Error",   color: "Blue"}
     ]
-    present = Product.find_by!(name: "Present")
-    missing = Product.find_by!(name: "Missing")
-    error     = Product.find_by!(name: "Error")
+    present_product = Product.find_by!(name: "Present")
+    missing_product = Product.find_by!(name: "Missing")
+    error_product = Product.find_by!(name: "Error")
 
-    Product.searchkick_index.remove(missing)
+    Product.searchkick_index.remove(missing_product)
 
     Searchkick.callbacks(false) do
-      present.update!(name: "PresentUpdated", color: "Red")
-      missing.update!(name: "MissingUpdated", color: "Red")
-      error.update!(name: "ErrorUpdated", color: "Red")
+      present_product.update!(name: "PresentUpdated", color: "Red")
+      missing_product.update!(name: "MissingUpdated", color: "Red")
+      error_product.update!(name: "ErrorUpdated", color: "Red")
     end
 
     # ES will reject with mapper_parsing_exception
@@ -371,11 +370,9 @@ class PartialReindexTest < Minitest::Test
       end
     end
 
-    begin
-      error = assert_raises(Searchkick::ImportError) do
-        Product.where(id: [present.id, missing.id, error.id])
-          .reindex(:search_name, on_missing: :full)
-      end
+    error = assert_raises(Searchkick::ImportError) do
+      Product.where(id: [present_product.id, missing_product.id, error_product.id])
+        .reindex(:search_name, on_missing: :full)
     end
     
     refute_match "document_missing", error.message
