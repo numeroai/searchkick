@@ -55,7 +55,7 @@ module Searchkick
         end
       when :queue
         queue_options = {}
-        queue_options[:on_missing] = on_missing if on_missing
+        queue_options[:on_missing] = on_missing if on_missing && on_missing != :raise
         queue_options[:method_name] = method_name if method_name
         queue_options[:full_reindex_method_name] = full_reindex_method_name if full_reindex_method_name
 
