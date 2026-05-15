@@ -55,7 +55,7 @@ module Searchkick
       payload = {"id" => record_id.to_s}
       payload["routing"] = routing.to_s if routing
       extra_options.each do |key, value|
-        payload[key.to_s] = value.to_s if value
+        payload[key.to_s] = value.to_s if !value.nil?
       end
       "json:#{JSON.generate(payload)}"
     end
