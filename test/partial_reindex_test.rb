@@ -557,6 +557,24 @@ class PartialReindexTest < Minitest::Test
     assert_search "altreindexmarker", ["Bye"], fields: [:color], load: false
   end
 
+  def test_on_missing_full_uses_full_reindex_method_name_queue
+    store [{name: "Hi", color: "Blue"}]
+    product = Product.first
+    Product.searchkick_index.remove(product)
+    Searchkick.callbacks(false) { product.update!(name: "Bye", color: "Red") }
+
+    product.reindex(:search_name, mode: :queue, on_missing: :full, full_reindex_method_name: :alt_search_data)
+
+    perform_enqueued_jobs do
+      Searchkick::ProcessQueueJob.perform_now(class_name: "Product")
+    end
+    
+    Product.searchkick_index.refresh
+
+    assert_search "bye", ["Bye"], fields: [:name], load: false
+    assert_search "altreindexmarker", ["Bye"], fields: [:color], load: false
+  end
+
   def test_partial_reindex_ignores_full_reindex_method_name
     store [{name: "Hi", color: "Blue"}]
 
