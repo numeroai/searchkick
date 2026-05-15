@@ -155,20 +155,20 @@ module Searchkick
       end
     end
 
-    def bulk_index(records)
+    def bulk_index(records, full_reindex_method_name: nil)
       return if records.empty?
 
       notify_bulk(records, "Import") do
-        queue_index(records)
+        queue_index(records, full_reindex_method_name: full_reindex_method_name)
       end
     end
     alias_method :import, :bulk_index
 
-    def bulk_update(records, method_name, ignore_missing: nil)
+    def bulk_update(records, method_name, on_missing: nil, full_reindex_method_name: nil)
       return if records.empty?
 
       notify_bulk(records, "Update") do
-        queue_update(records, method_name, ignore_missing: ignore_missing)
+        queue_update(records, method_name, on_missing: on_missing, full_reindex_method_name: full_reindex_method_name)
       end
     end
 
@@ -211,14 +211,15 @@ module Searchkick
 
     # note: this is designed to be used internally
     # so it does not check object matches index class
-    def reindex(object, method_name: nil, ignore_missing: nil, full: false, **options)
+    def reindex(object, method_name: nil, ignore_missing: nil, on_missing: nil, full: false, full_reindex_method_name: nil, **options)
+      on_missing = Searchkick.normalize_on_missing(on_missing, ignore_missing)
       if @options[:job_options]
         options[:job_options] = (@options[:job_options] || {}).merge(options[:job_options] || {})
       end
 
       if object.is_a?(Array)
         # note: purposefully skip full
-        return reindex_records(object, method_name: method_name, ignore_missing: ignore_missing, **options)
+        return reindex_records(object, method_name: method_name, on_missing: on_missing, full_reindex_method_name: full_reindex_method_name, **options)
       end
 
       if !object.respond_to?(:searchkick_klass)
@@ -239,7 +240,7 @@ module Searchkick
         raise ArgumentError, "unsupported keywords: #{options.keys.map(&:inspect).join(", ")}" if options.any?
 
         # import only
-        import_scope(relation, method_name: method_name, mode: mode, scope: scope, ignore_missing: ignore_missing, job_options: job_options)
+        import_scope(relation, method_name: method_name, mode: mode, scope: scope, on_missing: on_missing, full_reindex_method_name: full_reindex_method_name, job_options: job_options)
         self.refresh if refresh
         true
       else
@@ -254,7 +255,7 @@ module Searchkick
           options[:mode] ||= :async
         end
 
-        full_reindex(relation, **options)
+        full_reindex(relation, full_reindex_method_name: full_reindex_method_name, **options)
       end
     end
 
@@ -323,17 +324,29 @@ module Searchkick
       Searchkick.client
     end
 
-    def queue_index(records)
-      Searchkick.indexer.queue(records.map { |r| RecordData.new(self, r).index_data })
+    def queue_index(records, full_reindex_method_name: nil)
+      Searchkick.indexer.queue(records.map { |r| RecordData.new(self, r).index_data(full_reindex_method_name: full_reindex_method_name) })
     end
 
     def queue_delete(records)
       Searchkick.indexer.queue(records.reject { |r| r.id.blank? }.map { |r| RecordData.new(self, r).delete_data })
     end
 
-    def queue_update(records, method_name, ignore_missing:)
+    def queue_update(records, method_name, on_missing:, full_reindex_method_name: nil)
       items = records.map { |r| RecordData.new(self, r).update_data(method_name) }
-      items.each { |i| i.instance_variable_set(:@ignore_missing, true) } if ignore_missing
+      if on_missing && on_missing != :raise
+        items.each_with_index do |item, i|
+          case on_missing
+          when :ignore
+            item.instance_variable_set(:@on_missing_ignore, true)
+          when :full
+            item.instance_variable_set(
+              :@on_missing_full_builder,
+              -> { RecordData.new(self, records[i]).index_data(full_reindex_method_name: full_reindex_method_name) }
+            )
+          end
+        end
+      end
       Searchkick.indexer.queue(items)
     end
 
@@ -360,7 +373,7 @@ module Searchkick
 
     # https://gist.github.com/jarosan/3124884
     # https://www.elastic.co/blog/changing-mapping-with-zero-downtime/
-    def full_reindex(relation, import: true, resume: false, retain: false, mode: nil, refresh_interval: nil, scope: nil, wait: nil, job_options: nil)
+    def full_reindex(relation, import: true, resume: false, retain: false, mode: nil, refresh_interval: nil, scope: nil, wait: nil, full_reindex_method_name: nil, job_options: nil)
       raise ArgumentError, "wait only available in :async mode" if !wait.nil? && mode != :async
       raise ArgumentError, "Full reindex does not support :queue mode - use :async mode instead" if mode == :queue
 
@@ -381,6 +394,7 @@ module Searchkick
         full: true,
         resume: resume,
         scope: scope,
+        full_reindex_method_name: full_reindex_method_name,
         job_options: job_options
       }
 
