@@ -1,3 +1,4 @@
+require "json"
 module Searchkick
   class ProcessBatchJob < Searchkick.parent_job.constantize
     queue_as { Searchkick.queue_name }
