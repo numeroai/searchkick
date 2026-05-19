@@ -22,11 +22,17 @@ module Searchkick
           # before the queue job runs
           routing = record.search_routing if record.respond_to?(:search_routing)
 
-          serialize_record(
-            record.id,
-            routing:,
-            **extra_options
-          )
+          if extra_options.present?
+            serialize_record(
+              record.id,
+              routing:,
+              **extra_options
+            )
+          else
+            value = escape(record.id.to_s)
+            value = "#{value}|#{escape(routing)}" if routing
+            value 
+          end
         end
 
       push(record_ids)
