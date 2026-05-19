@@ -9,8 +9,17 @@ module Searchkick
 
       items =
         record_ids.map do |r|
-          if r.start_with?("json:")
-            JSON.parse(r.delete_prefix("json:")).transform_keys(&:to_sym)
+          parsed =
+            if r.start_with?("json:")
+              begin
+                JSON.parse(r.delete_prefix("json:")).transform_keys(&:to_sym)
+              rescue JSON::ParserError
+                nil
+              end
+            end
+
+          if parsed
+            parsed
           else
             parts = r.split(/(?<!\|)\|(?!\|)/, 2).map { |v| v.gsub("||", "|") }
             {id: parts[0], routing: parts[1]}
