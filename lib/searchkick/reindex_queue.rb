@@ -57,6 +57,10 @@ module Searchkick
       "searchkick:reindex_queue:#{name}"
     end
 
+    def escape(value)
+      value.to_s.gsub("|", "||")
+    end
+
     def serialize_record(record_id, routing:, **extra_options)
       payload = {"id" => record_id.to_s}
       payload["routing"] = routing.to_s if routing
