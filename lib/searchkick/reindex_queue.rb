@@ -20,7 +20,7 @@ module Searchkick
         records.map do |record|
           # always pass routing in case record is deleted
           # before the queue job runs
-          routing = record.search_routing if record.respond_to?(:search_routing)
+          routing = record.respond_to?(:search_routing) ? record.search_routing : nil
 
           if extra_options.present?
             serialize_record(
