@@ -505,7 +505,7 @@ class PartialReindexTest < Minitest::Test
   def test_queue_legacy_pipe_format_with_routing
     Store.searchkick_index.reindex_queue.clear
 
-    store = Store.create!(name: "Store A")
+    store = Searchkick.callbacks(false) { Store.create!(name: "Store A") }
 
     # Simulate a pre-JSON-format entry as written by the old code: "id|routing"
     Store.searchkick_index.reindex_queue.push("#{store.id}|Store A")

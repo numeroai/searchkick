@@ -2,7 +2,7 @@ class Minitest::Test
   include ActiveJob::TestHelper
 
   def setup
-    [Product, Store].each do |model|
+    [Product, Store, Contact].each do |model|
       setup_model(model)
     end
   end
