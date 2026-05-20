@@ -72,7 +72,6 @@ module Searchkick
     end
 
     def reindex_items(klass, items, method_name: nil, on_missing: nil, single: false, full_reindex_method_name: nil)
-      on_missing = on_missing.to_sym if on_missing.is_a?(String)
       routing = items.to_h { |r| [r[:id], r[:routing]] }
       record_ids = routing.keys
 
