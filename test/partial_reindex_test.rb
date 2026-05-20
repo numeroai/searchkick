@@ -16,6 +16,21 @@ class PartialReindexTest < Minitest::Test
     assert_search "blue", ["Bye"], fields: [:color], load: false
   end
 
+  def test_update_record_uses_default_on_missing
+    store [{name: "Hi", color: "Blue"}]
+
+    product = Product.first
+    Searchkick.callbacks(false) do
+      product.update!(name: "Bye", color: "Red")
+    end
+
+    Product.searchkick_index.update_record(product, :search_name)
+    Product.searchkick_index.refresh
+
+    assert_search "bye", ["Bye"], fields: [:name], load: false
+    assert_search "blue", ["Bye"], fields: [:color], load: false
+  end
+
   def test_record_async
     store [{name: "Hi", color: "Blue"}]
 
@@ -256,6 +271,24 @@ class PartialReindexTest < Minitest::Test
     end
   end
 
+  def test_bulk_update_ignore_missing_deprecated
+    store [{name: "Hi", color: "Blue"}]
+    product = Product.first
+    Product.searchkick_index.remove(product)
+
+    assert_warns("ignore_missing is deprecated, use on_missing: :ignore instead") do
+      Product.searchkick_index.bulk_update([product], :search_name, ignore_missing: true)
+    end
+  end
+
+  def test_bulk_update_accepts_string_on_missing
+    store [{name: "Hi", color: "Blue"}]
+    product = Product.first
+    Product.searchkick_index.remove(product)
+
+    Product.searchkick_index.bulk_update([product], :search_name, on_missing: "ignore")
+  end
+
   def test_record_on_missing_raise_explicit
     store [{name: "Hi", color: "Blue"}]
     product = Product.first
@@ -374,7 +407,7 @@ class PartialReindexTest < Minitest::Test
       Product.where(id: [present_product.id, missing_product.id, error_product.id])
         .reindex(:search_name, on_missing: :full)
     end
-    
+
     refute_match "document_missing", error.message
     assert_match(/mapper|parsing|illegal/i, error.message)
 
@@ -386,6 +419,54 @@ class PartialReindexTest < Minitest::Test
     Product.class_eval do
       alias_method :search_name, :__orig_search_name
       remove_method :__orig_search_name
+    end
+  end
+
+  def test_on_missing_full_mixed_with_retry_error
+    store [
+      {name: "Present", color: "Blue"},
+      {name: "Missing", color: "Blue"},
+      {name: "Error",   color: "Blue"}
+    ]
+    present_product = Product.find_by!(name: "Present")
+    missing_product = Product.find_by!(name: "Missing")
+    error_product = Product.find_by!(name: "Error")
+
+    Product.searchkick_index.remove(missing_product)
+
+    Searchkick.callbacks(false) do
+      present_product.update!(name: "PresentUpdated", color: "Red")
+      missing_product.update!(name: "MissingUpdated", color: "Red")
+      error_product.update!(name: "ErrorUpdated", color: "Red")
+    end
+
+    Product.class_eval do
+      alias_method :__orig_search_name, :search_name
+      alias_method :__orig_search_data, :search_data
+
+      define_method(:search_name) do
+        name == "ErrorUpdated" ? {name: {nested: "x"}} : __orig_search_name
+      end
+
+      define_method(:search_data) do
+        name == "MissingUpdated" ? __orig_search_data.merge(name: {nested: "x"}) : __orig_search_data
+      end
+    end
+
+    error = assert_raises(Searchkick::ImportError) do
+      Product.where(id: [present_product.id, missing_product.id, error_product.id])
+        .reindex(:search_name, on_missing: :full)
+    end
+
+    assert_match "full reindex retry failed", error.message
+    assert_match error_product.id.to_s, error.message
+    assert_match missing_product.id.to_s, error.message
+  ensure
+    Product.class_eval do
+      alias_method :search_name, :__orig_search_name
+      alias_method :search_data, :__orig_search_data
+      remove_method :__orig_search_name
+      remove_method :__orig_search_data
     end
   end
 

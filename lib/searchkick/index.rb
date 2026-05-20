@@ -143,7 +143,7 @@ module Searchkick
 
     def update_record(record, method_name)
       notify(record, "Update") do
-        queue_update([record], method_name)
+        queue_update([record], method_name, on_missing: :raise)
       end
     end
 
@@ -164,7 +164,8 @@ module Searchkick
     end
     alias_method :import, :bulk_index
 
-    def bulk_update(records, method_name, on_missing: nil, full_reindex_method_name: nil)
+    def bulk_update(records, method_name, ignore_missing: nil, on_missing: nil, full_reindex_method_name: nil)
+      on_missing = Searchkick.normalize_on_missing(on_missing, ignore_missing)
       return if records.empty?
 
       notify_bulk(records, "Update") do
@@ -332,7 +333,8 @@ module Searchkick
       Searchkick.indexer.queue(records.reject { |r| r.id.blank? }.map { |r| RecordData.new(self, r).delete_data })
     end
 
-    def queue_update(records, method_name, on_missing:, full_reindex_method_name: nil)
+    def queue_update(records, method_name, on_missing: nil, full_reindex_method_name: nil)
+      on_missing = Searchkick.normalize_on_missing(on_missing, nil)
       items = records.map { |r| RecordData.new(self, r).update_data(method_name) }
       if on_missing && on_missing != :raise
         items.each_with_index do |item, i|
