@@ -21,7 +21,6 @@ module Searchkick
 
         # only add if set for backwards compatibility
         extra_options = {}
-        extra_options[:method_name] = method_name.to_s if method_name
         extra_options[:full_reindex_method_name] = full_reindex_method_name.to_s if full_reindex_method_name
         extra_options[:on_missing] = on_missing.to_s if on_missing && on_missing != :raise
 
@@ -39,11 +38,13 @@ module Searchkick
           Searchkick::ReindexV2Job.set(**job_options).perform_later(
             record.class.name,
             record.id.to_s,
+            method_name ? method_name.to_s : nil,
             routing: routing,
             index_name: index.name,
             **extra_options
           )
         else
+          extra_options[:method_name] = method_name.to_s if method_name
           Searchkick::BulkReindexJob.set(**job_options).perform_later(
             class_name: records.first.class.searchkick_options[:class_name],
             record_ids: records.map { |r| r.id.to_s },
