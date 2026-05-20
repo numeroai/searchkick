@@ -1740,6 +1740,13 @@ Fully reindex missing documents with:
 Product.reindex(:prices_data, on_missing: :full)
 ```
 
+Queue partial reindexes for batched processing (requires the [queuing](#queuing) setup):
+
+```ruby
+Product.reindex(:prices_data, mode: :queue)
+Product.reindex(:prices_data, mode: :queue, on_missing: :ignore)
+```
+
 ## Advanced
 
 Searchkick makes it easy to use the Elasticsearch or OpenSearch DSL on its own.

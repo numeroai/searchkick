@@ -29,6 +29,7 @@ class Minitest::Test
     Searchkick.callbacks(:bulk) do
       model.destroy_all
     end
+    model.searchkick_index.reindex_queue.clear if Searchkick.redis
   end
 
   def store(documents, model = default_model, reindex: true)
