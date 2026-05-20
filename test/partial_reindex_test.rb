@@ -630,6 +630,39 @@ class PartialReindexTest < Minitest::Test
     assert_nil result[:routing]
   end
 
+  def test_queue_one_group_failure_does_not_drop_other_groups
+    # Regression: items are RPOPed off Redis before processing, so if an
+    # earlier option-group raises, later groups in the same batch must
+    # still run — otherwise their items are permanently lost.
+    Contact.searchkick_index.reindex_queue.clear
+
+    # contact_1: removed from index; partial reindex with on_missing :raise
+    # will trigger a document_missing_exception → ImportError
+    contact_1 = Contact.create!(name: "Failing", email: "failing@example.com")
+    contact_1.reindex
+    Contact.searchkick_index.refresh
+    Contact.searchkick_index.remove(contact_1)
+    Contact.searchkick_index.refresh
+
+    # contact_2: not yet indexed; will be indexed by the queue's full-reindex group
+    contact_2 = Searchkick.callbacks(false) do
+      Contact.create!(name: "Succeeding", email: "succeeding@example.com")
+    end
+
+    # Push the failing entry first so its group iterates first in group_by
+    contact_1.reindex(:search_name, mode: :queue, on_missing: :raise)
+    Contact.searchkick_index.reindex_queue.push(contact_2.id.to_s)
+
+    assert_raises(Searchkick::ImportError) do
+      Searchkick::ProcessQueueJob.perform_now(class_name: "Contact", inline: true)
+    end
+    Contact.searchkick_index.refresh
+
+    # contact_2 must have been indexed despite contact_1's group raising first
+    doc = Contact.searchkick_index.retrieve(contact_2)
+    assert_equal "Succeeding", doc["name"]
+  end
+
   def test_on_missing_full_uses_full_reindex_method_name_inline
     store [{name: "Hi", color: "Blue"}]
     product = Product.first

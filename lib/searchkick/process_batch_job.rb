@@ -12,10 +12,17 @@ module Searchkick
 
       # one bulk per distinct (method_name, on_missing, full_reindex_method_name)
       # combination; a queue mixing many combinations will fan out to many bulk
-      # requests rather than one
+      # requests rather than one. process every group even if an earlier one
+      # raises — items have already been RPOPed and would otherwise be lost.
+      first_error = nil
       items.group_by { |i| i.except(:id, :routing) }.each do |extra_options, batched_items|
-        RecordIndexer.new(index).reindex_items(relation, batched_items, **extra_options)
+        begin
+          RecordIndexer.new(index).reindex_items(relation, batched_items, **extra_options)
+        rescue => e
+          first_error ||= e
+        end
       end
+      raise first_error if first_error
     end
   end
 end
