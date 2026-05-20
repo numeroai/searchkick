@@ -7,12 +7,6 @@ module Searchkick
     # legacy encoder only writes id + "|" + escaped routing.
     FORMAT_SENTINEL = "\x01\x01".freeze
 
-    # Keys retained from a parsed JSON payload. Unknown keys (e.g. an entry
-    # written by a newer Searchkick that added an option this version doesn't
-    # know about) are dropped so they can't crash the batch when splatted
-    # into RecordIndexer#reindex_items.
-    KNOWN_KEYS = [:id, :routing, :method_name, :on_missing, :full_reindex_method_name].freeze
-
     attr_reader :name
 
     def initialize(name)
@@ -30,7 +24,7 @@ module Searchkick
           rescue JSON::ParserError
             nil
           end
-        return parsed.transform_keys(&:to_sym).slice(*KNOWN_KEYS) if parsed.is_a?(Hash)
+        return parsed.transform_keys(&:to_sym) if parsed.is_a?(Hash)
       end
 
       parts = entry.split(/(?<!\|)\|(?!\|)/, 2).map { |v| v.gsub("||", "|") }

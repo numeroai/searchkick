@@ -630,17 +630,6 @@ class PartialReindexTest < Minitest::Test
     assert_nil result[:routing]
   end
 
-  def test_queue_parse_drops_unknown_keys_in_sentinel_entry
-    # KNOWN_KEYS slice: a future format that adds an option this version
-    # doesn't know about must not crash when splatted into reindex_items.
-    payload = '{"id":"5","method_name":"search_name","brand_new_option":"x"}'
-    result = Searchkick::ReindexQueue.parse("\x01\x01#{payload}")
-
-    assert_equal "5", result[:id]
-    assert_equal "search_name", result[:method_name]
-    refute result.key?(:brand_new_option)
-  end
-  
   def test_on_missing_full_uses_full_reindex_method_name_inline
     store [{name: "Hi", color: "Blue"}]
     product = Product.first
