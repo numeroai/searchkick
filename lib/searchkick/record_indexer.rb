@@ -44,18 +44,18 @@ module Searchkick
             **extra_options
           )
         else
-          extra_options[:method_name] = method_name.to_s if method_name
           Searchkick::BulkReindexJob.set(**job_options).perform_later(
             class_name: records.first.class.searchkick_options[:class_name],
             record_ids: records.map { |r| r.id.to_s },
             index_name: index.name,
+            method_name: method_name ? method_name.to_s : nil,
             **extra_options
           )
         end
       when :queue
         extra_options = {}
         extra_options[:on_missing] = on_missing if on_missing && on_missing != :raise
-        extra_options[:method_name] = method_name if method_name
+        extra_options[:method_name] = method_name.to_s if method_name
         extra_options[:full_reindex_method_name] = full_reindex_method_name if full_reindex_method_name
 
         index.reindex_queue.push_records(records, **extra_options)
