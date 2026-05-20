@@ -599,6 +599,29 @@ class PartialReindexTest < Minitest::Test
     assert_search "*", ["Store A"], {routing: "Store A"}, Store
   end
 
+  def test_queue_partial_reindex_with_routing_deletes_missing_record
+    Store.searchkick_index.reindex_queue.clear
+
+    store = Searchkick.callbacks(false) { Store.create!(name: "Store A") }
+    store.reindex
+    Store.searchkick_index.refresh
+
+    store.reindex(:search_data, mode: :queue)
+    entry = Store.searchkick_index.reindex_queue.reserve(limit: 1).first
+    parsed = Searchkick::ReindexQueue.parse(entry)
+
+    assert_equal store.id.to_s, parsed[:id]
+    assert_equal "Store A", parsed[:routing]
+    assert_equal "search_data", parsed[:method_name]
+
+    Searchkick.callbacks(false) { store.destroy }
+
+    Searchkick::ProcessBatchJob.new.perform(class_name: "Store", record_ids: [entry])
+    Store.searchkick_index.refresh
+
+    assert_search "*", [], {routing: "Store A"}, Store
+  end
+
   def test_queue_entry_with_json_prefixed_id_is_treated_as_legacy
     # Regression: an entry whose body happens to be a valid JSON scalar
     # (e.g. an id of "json:42" left over from an older client) must be parsed
@@ -609,6 +632,27 @@ class PartialReindexTest < Minitest::Test
 
     # legacy id => bulk_delete of a non-existent doc; no raise
     Searchkick::ProcessQueueJob.perform_now(class_name: "Contact", inline: true)
+  end
+
+  def test_queue_parse_valid_sentinel_entry
+    entry = Searchkick::ReindexQueue::FORMAT_SENTINEL + JSON.generate(
+      "id" => "1",
+      "routing" => "route|1",
+      "method_name" => "search_name",
+      "on_missing" => "ignore",
+      "full_reindex_method_name" => "alt_search_data"
+    )
+
+    assert_equal(
+      {
+        id: "1",
+        routing: "route|1",
+        method_name: "search_name",
+        on_missing: "ignore",
+        full_reindex_method_name: "alt_search_data"
+      },
+      Searchkick::ReindexQueue.parse(entry)
+    )
   end
 
   def test_queue_parse_handles_malformed_json_sentinel_entry
@@ -707,6 +751,34 @@ class PartialReindexTest < Minitest::Test
 
     assert_search "bye", ["Bye"], fields: [:name], load: false
     assert_search "altreindexmarker", ["Bye"], fields: [:color], load: false
+  end
+
+  def test_relation_on_missing_full_uses_full_reindex_method_name_queue
+    store [{name: "Hi", color: "Blue"}, {name: "Hello", color: "Green"}]
+    products = Product.all.to_a
+    products.each { |product| Product.searchkick_index.remove(product) }
+    Product.searchkick_index.refresh
+
+    Searchkick.callbacks(false) do
+      products[0].update!(name: "Bye", color: "Red")
+      products[1].update!(name: "Ciao", color: "Yellow")
+    end
+
+    Product.where(id: products.map(&:id)).reindex(
+      :search_name,
+      mode: :queue,
+      on_missing: :full,
+      full_reindex_method_name: :alt_search_data
+    )
+
+    perform_enqueued_jobs do
+      Searchkick::ProcessQueueJob.perform_now(class_name: "Product")
+    end
+    Product.searchkick_index.refresh
+
+    assert_search "bye", ["Bye"], fields: [:name], load: false
+    assert_search "ciao", ["Ciao"], fields: [:name], load: false
+    assert_search "altreindexmarker", ["Bye", "Ciao"], fields: [:color], load: false
   end
 
   def test_partial_reindex_ignores_full_reindex_method_name
