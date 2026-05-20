@@ -588,7 +588,7 @@ class PartialReindexTest < Minitest::Test
 
     store = Searchkick.callbacks(false) { Store.create!(name: "Store A") }
 
-    # Simulate a pre-JSON-format entry as written by the old code: "id|routing"
+    # Simulate a pre-sentinel entry as written by the old code: "id|routing"
     Store.searchkick_index.reindex_queue.push("#{store.id}|Store A")
 
     perform_enqueued_jobs do
@@ -597,6 +597,18 @@ class PartialReindexTest < Minitest::Test
     Store.searchkick_index.refresh
 
     assert_search "*", ["Store A"], {routing: "Store A"}, Store
+  end
+
+  def test_queue_entry_with_json_shaped_id_is_treated_as_legacy
+    # Regression: an entry whose body happens to be a valid JSON scalar
+    # (e.g. an id of "json:42" left over from an older client) must be parsed
+    # as a legacy id, not crash on transform_keys.
+    Contact.searchkick_index.reindex_queue.clear
+
+    Contact.searchkick_index.reindex_queue.push("json:42")
+
+    # legacy id => bulk_delete of a non-existent doc; no raise
+    Searchkick::ProcessQueueJob.perform_now(class_name: "Contact", inline: true)
   end
   
   def test_on_missing_full_uses_full_reindex_method_name_inline

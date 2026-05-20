@@ -2,12 +2,33 @@ require "json"
 
 module Searchkick
   class ReindexQueue
+    # Marker (\x01) + format version (\x01) prefix for entries carrying extra
+    # options as JSON. Legacy entries cannot begin with these bytes — the
+    # legacy encoder only writes id + "|" + escaped routing.
+    FORMAT_SENTINEL = "\x01\x01".freeze
+
     attr_reader :name
 
     def initialize(name)
       @name = name
 
       raise Error, "Searchkick.redis not set" unless Searchkick.redis
+    end
+
+    # parse a queue entry written by either the legacy or current format
+    def self.parse(entry)
+      if entry.start_with?(FORMAT_SENTINEL)
+        parsed =
+          begin
+            JSON.parse(entry.delete_prefix(FORMAT_SENTINEL))
+          rescue JSON::ParserError
+            nil
+          end
+        return parsed.transform_keys(&:to_sym) if parsed.is_a?(Hash)
+      end
+
+      parts = entry.split(/(?<!\|)\|(?!\|)/, 2).map { |v| v.gsub("||", "|") }
+      {id: parts[0], routing: parts[1]}
     end
 
     # supports single and multiple ids
@@ -64,7 +85,7 @@ module Searchkick
       payload["routing"] = routing.to_s if routing
       extra_options.each { |key, value| payload[key.to_s] = value.to_s if !value.nil? }
 
-      "json:#{JSON.generate(payload)}"
+      "#{FORMAT_SENTINEL}#{JSON.generate(payload)}"
     end
   end
 end

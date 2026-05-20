@@ -1,5 +1,3 @@
-require "json"
-
 module Searchkick
   class ProcessBatchJob < Searchkick.parent_job.constantize
     queue_as { Searchkick.queue_name }
@@ -8,24 +6,7 @@ module Searchkick
       model = Searchkick.load_model(class_name)
       index = model.searchkick_index(name: index_name)
 
-      items =
-        record_ids.map do |r|
-          parsed =
-            if r.start_with?("json:")
-              begin
-                JSON.parse(r.delete_prefix("json:")).transform_keys(&:to_sym)
-              rescue JSON::ParserError
-                nil
-              end
-            end
-
-          if parsed
-            parsed
-          else
-            parts = r.split(/(?<!\|)\|(?!\|)/, 2).map { |v| v.gsub("||", "|") }
-            {id: parts[0], routing: parts[1]}
-          end
-        end
+      items = record_ids.map { |r| ReindexQueue.parse(r) }
 
       relation = Searchkick.scope(model)
 
