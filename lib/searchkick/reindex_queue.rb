@@ -23,15 +23,11 @@ module Searchkick
           routing = record.respond_to?(:search_routing) ? record.search_routing : nil
 
           if extra_options.present?
-            serialize_record(
-              record.id,
-              routing:,
-              **extra_options
-            )
+            serialize_record(record.id, routing:, **extra_options)
           else
             value = escape(record.id.to_s)
             value = "#{value}|#{escape(routing)}" if routing
-            value 
+            value
           end
         end
 
@@ -62,11 +58,12 @@ module Searchkick
     end
 
     def serialize_record(record_id, routing:, **extra_options)
-      payload = {"id" => record_id.to_s}
+      payload = {}
+
+      payload["id"] = record_id.to_s
       payload["routing"] = routing.to_s if routing
-      extra_options.each do |key, value|
-        payload[key.to_s] = value.to_s if !value.nil?
-      end
+      extra_options.each { |key, value| payload[key.to_s] = value.to_s if !value.nil? }
+
       "json:#{JSON.generate(payload)}"
     end
   end
