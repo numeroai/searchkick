@@ -21,8 +21,11 @@ module Searchkick
 
         # only add if set for backwards compatibility
         extra_options = {}
-        extra_options[:full_reindex_method_name] = full_reindex_method_name.to_s if full_reindex_method_name
         extra_options[:on_missing] = on_missing.to_s if on_missing && on_missing != :raise
+        if full_reindex_method_name
+          extra_options[:full_reindex_method_name] = full_reindex_method_name.to_s
+        end
+
 
         # we could likely combine ReindexV2Job, BulkReindexJob, and ProcessBatchJob
         # but keep them separate for now
@@ -54,12 +57,13 @@ module Searchkick
         end
       when :queue
         extra_options = {}
-        extra_options[:on_missing] = on_missing if on_missing && on_missing != :raise
         extra_options[:method_name] = method_name.to_s if method_name
-        extra_options[:full_reindex_method_name] = full_reindex_method_name if full_reindex_method_name
+        extra_options[:on_missing] = on_missing.to_s if on_missing && on_missing != :raise
+        if full_reindex_method_name
+          extra_options[:full_reindex_method_name] = full_reindex_method_name.to_s
+        end
 
         index.reindex_queue.push_records(records, **extra_options)
-
       when true, :inline
         index_records, other_records = records.partition { |r| index_record?(r) }
         import_inline(index_records, !full ? other_records : [], method_name: method_name, on_missing: on_missing, single: single, full_reindex_method_name: full_reindex_method_name)
