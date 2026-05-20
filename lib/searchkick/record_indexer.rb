@@ -48,8 +48,6 @@ module Searchkick
             class_name: records.first.class.searchkick_options[:class_name],
             record_ids: records.map { |r| r.id.to_s },
             index_name: index.name,
-            method_name: method_name ? method_name.to_s : nil,
-            full_reindex_method_name: full_reindex_method_name ? full_reindex_method_name.to_s : nil,
             **extra_options
           )
         end
