@@ -1,3 +1,7 @@
+## Unreleased
+
+- Added `:queue` mode support for partial reindexing (`Model.reindex(:method_name, mode: :queue)`, including `on_missing` and `full_reindex_method_name`). Note: queue entries now use a binary-sentinel framing in addition to the legacy `id|routing` format — workers must be upgraded before publishers to avoid stale workers misinterpreting new entries.
+
 ## 6.1.1 (2026-05-14)
 
 - Fixed smart aggs behavior with `_and`

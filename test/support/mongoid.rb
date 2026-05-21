@@ -34,6 +34,13 @@ class Store
   field :name
 end
 
+class Contact
+  include Mongoid::Document
+
+  field :name
+  field :email
+end
+
 class Region
   include Mongoid::Document
 

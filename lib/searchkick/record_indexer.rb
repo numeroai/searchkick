@@ -22,6 +22,10 @@ module Searchkick
         # only add if set for backwards compatibility
         extra_options = {}
         extra_options[:on_missing] = on_missing.to_s if on_missing && on_missing != :raise
+        if full_reindex_method_name
+          extra_options[:full_reindex_method_name] = full_reindex_method_name.to_s
+        end
+
 
         # we could likely combine ReindexV2Job, BulkReindexJob, and ProcessBatchJob
         # but keep them separate for now
@@ -40,7 +44,6 @@ module Searchkick
             method_name ? method_name.to_s : nil,
             routing: routing,
             index_name: index.name,
-            full_reindex_method_name: full_reindex_method_name ? full_reindex_method_name.to_s : nil,
             **extra_options
           )
         else
@@ -49,19 +52,18 @@ module Searchkick
             record_ids: records.map { |r| r.id.to_s },
             index_name: index.name,
             method_name: method_name ? method_name.to_s : nil,
-            full_reindex_method_name: full_reindex_method_name ? full_reindex_method_name.to_s : nil,
             **extra_options
           )
         end
       when :queue
-        if method_name
-          raise Error, "Partial reindex not supported with queue option"
-        end
+        extra_options = {}
+        extra_options[:method_name] = method_name.to_s if method_name
+        extra_options[:on_missing] = on_missing.to_s if on_missing && on_missing != :raise
         if full_reindex_method_name
-          raise Error, "full_reindex_method_name not supported with queue option"
+          extra_options[:full_reindex_method_name] = full_reindex_method_name.to_s
         end
 
-        index.reindex_queue.push_records(records)
+        index.reindex_queue.push_records(records, **extra_options)
       when true, :inline
         index_records, other_records = records.partition { |r| index_record?(r) }
         import_inline(index_records, !full ? other_records : [], method_name: method_name, on_missing: on_missing, single: single, full_reindex_method_name: full_reindex_method_name)
@@ -73,7 +75,7 @@ module Searchkick
       true
     end
 
-    def reindex_items(klass, items, method_name:, on_missing:, single: false, full_reindex_method_name: nil)
+    def reindex_items(klass, items, method_name: nil, on_missing: nil, single: false, full_reindex_method_name: nil)
       routing = items.to_h { |r| [r[:id], r[:routing]] }
       record_ids = routing.keys
 
