@@ -1,6 +1,6 @@
-## Unreleased
+## 6.1.2 (unreleased)
 
-- Fixed `clear_scroll` failing with `too_long_http_line_exception` on indices with many shards (scroll_id moved to request body)
+- Fixed `too_long_http_line_exception` with `clear_scroll` method
 
 ## 6.1.1 (2026-05-14)
 
