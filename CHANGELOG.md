@@ -1,4 +1,4 @@
-## 6.1.2 (unreleased)
+## 6.1.2 (2026-06-04)
 
 - Fixed `too_long_http_line_exception` with `clear_scroll` method
 
