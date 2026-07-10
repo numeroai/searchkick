@@ -1589,7 +1589,7 @@ For large data sets, you can use background jobs to parallelize reindexing.
 
 ```ruby
 Product.reindex(mode: :async)
-# {index_name: "products_production_20250111210018065"}
+# {index_name: "products_production_20260111210018065"}
 ```
 
 Once the jobs complete, promote the new index with:
