@@ -45,6 +45,7 @@ class ClientTest < Minitest::Test
         Song.searchkick_index.refresh
 
         assert_equal ["Secondary"], Song.search("*", load: false).map { |result| result["name"] }
+        assert_equal ["Secondary"], Song.search("*", index_name: Song.searchkick_index.name, load: false).map { |result| result["name"] }
         assert client.calls.any? { |call| call.first == :bulk }
         assert client.calls.any? { |call| call.first == :search }
       end

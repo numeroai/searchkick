@@ -23,6 +23,9 @@ module Searchkick
       return if items.empty?
 
       first_error = nil
+      # Bulk requests are not atomic, even for a single client. Process every
+      # group after draining the queue so an error does not silently drop items
+      # for clients that have not been attempted yet.
       items.zip(clients).group_by { |_, client| client.object_id }.each_value do |entries|
         client = entries.first.last
         begin
