@@ -192,7 +192,7 @@ module Searchkick
             body: {scroll_id: scroll_id}
           }
           params[:opaque_id] = options[:opaque_id] if options[:opaque_id]
-          Results.new(@klass, Searchkick.client.scroll(params), @options)
+          Results.new(@klass, client.scroll(params), @options)
         rescue => e
           if Searchkick.not_found_error?(e) && e.message =~ /search_context_missing_exception/i
             raise Error, "Scroll id has expired"
@@ -208,7 +208,7 @@ module Searchkick
         # try to clear scroll
         # not required as scroll will expire
         # but there is a cost to open scrolls
-        Searchkick.client.clear_scroll({body: {scroll_id: scroll_id}})
+        client.clear_scroll({body: {scroll_id: scroll_id}})
       rescue => e
         raise e unless Searchkick.transport_error?(e)
       end
@@ -217,6 +217,10 @@ module Searchkick
     private
 
     attr_reader :klass, :options
+
+    def client
+      options[:client] || Searchkick.client
+    end
 
     def results
       @results ||= with_hit.map(&:first)

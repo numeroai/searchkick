@@ -9,13 +9,17 @@ module Searchkick
 
     def perform
       if queries.any?
-        perform_search(queries)
+        queries.group_by { |query| query.client.object_id }.each_value do |client_queries|
+          client = client_queries.first.client
+          perform_search(client_queries, client: client)
+        end
+        queries
       end
     end
 
     private
 
-    def perform_search(search_queries, perform_retry: true)
+    def perform_search(search_queries, client:, perform_retry: true)
       params = {
         body: search_queries.flat_map { |q| [q.params.except(:body), q.body] }
       }
@@ -33,14 +37,10 @@ module Searchkick
       end
 
       if retry_queries.any?
-        perform_search(retry_queries, perform_retry: false)
+        perform_search(retry_queries, client: client, perform_retry: false)
       end
 
       search_queries
-    end
-
-    def client
-      Searchkick.client
     end
   end
 end

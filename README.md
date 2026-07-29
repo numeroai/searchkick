@@ -1811,6 +1811,27 @@ To access the `Elasticsearch::Client` or `OpenSearch::Client` directly, use:
 Searchkick.client
 ```
 
+To use a different client for a model, register a named client:
+
+```ruby
+Searchkick.clients[:secondary] = OpenSearch::Client.new(
+  url: ENV["SECONDARY_OPENSEARCH_URL"]
+)
+```
+
+And specify the client on the model:
+
+```ruby
+class SecondaryProduct < ApplicationRecord
+  searchkick client_name: :secondary
+end
+```
+
+All index management, searches, bulk indexing, reindex jobs, and scrolling for
+the model use the named client. `Searchkick.multi_search` automatically sends
+one request per client when queries use different clients. A single query
+cannot search models on different clients.
+
 ## Multi Search
 
 To batch search requests for performance, use:

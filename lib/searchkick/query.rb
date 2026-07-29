@@ -66,6 +66,26 @@ module Searchkick
       klass ? klass.searchkick_klass : nil
     end
 
+    def client
+      models =
+        if klass
+          [klass]
+        elsif options[:models]
+          Array(options[:models])
+        elsif options[:index_name]
+          Array(options[:index_name]).select { |v| v.respond_to?(:searchkick_index) }
+        else
+          []
+        end
+
+      query_clients = models.map { |model| model.searchkick_index.client }.uniq(&:object_id)
+      if query_clients.size > 1
+        raise Error, "Cannot search models on multiple clients in a single query - use Searchkick.multi_search"
+      end
+
+      query_clients.first || Searchkick.client
+    end
+
     def params
       if options[:models]
         @index_mapping = {}
@@ -133,13 +153,14 @@ module Searchkick
         index_mapping: @index_mapping,
         suggest: options[:suggest],
         scroll: options[:scroll],
-        opaque_id: options[:opaque_id]
+        opaque_id: options[:opaque_id],
+        client: client
       }
 
       if options[:debug]
-        server = Searchkick.opensearch? ? "OpenSearch" : "Elasticsearch"
+        server = Searchkick.opensearch?(client) ? "OpenSearch" : "Elasticsearch"
         puts "Searchkick #{Searchkick::VERSION}"
-        puts "#{server} #{Searchkick.server_version}"
+        puts "#{server} #{Searchkick.server_version(client)}"
         puts
 
         puts "Model Options"
@@ -230,7 +251,7 @@ module Searchkick
         query: params
       }
       ActiveSupport::Notifications.instrument("search.searchkick", event) do
-        Searchkick.client.search(params)
+        client.search(params)
       end
     end
 
@@ -981,7 +1002,7 @@ module Searchkick
         raise ArgumentError, "distance must match searchkick options for approximate search"
       end
 
-      if Searchkick.opensearch?
+      if Searchkick.opensearch?(client)
         if exact
           # https://opensearch.org/docs/latest/search-plugins/knn/knn-score-script/#spaces
           space_type =
@@ -1016,11 +1037,11 @@ module Searchkick
                   space_type: space_type
                 }
               },
-              boost: distance == "cosine" && Searchkick.server_below?("2.19.0") ? 0.5 : 1.0
+              boost: distance == "cosine" && Searchkick.server_below?("2.19.0", client) ? 0.5 : 1.0
             }
           }
         else
-          if ef_search && Searchkick.server_below?("2.16.0")
+          if ef_search && Searchkick.server_below?("2.16.0", client)
             raise Error, "ef_search requires OpenSearch 2.16+"
           end
 
@@ -1037,7 +1058,7 @@ module Searchkick
       else
         if exact
           # prevent incorrect distances/results with Elasticsearch 9.0.0-rc1
-          if !Searchkick.server_below?("9.0.0") && field_options[:distance] == "cosine" && distance != "cosine"
+          if !Searchkick.server_below?("9.0.0", client) && field_options[:distance] == "cosine" && distance != "cosine"
             raise ArgumentError, "distance must match searchkick options"
           end
 

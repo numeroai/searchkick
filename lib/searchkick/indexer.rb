@@ -6,19 +6,40 @@ module Searchkick
 
     def initialize
       @queued_items = []
+      @queued_clients = []
     end
 
-    def queue(items)
+    def queue(items, client: Searchkick.client)
       @queued_items.concat(items)
+      @queued_clients.concat(Array.new(items.size, client))
       perform unless Searchkick.callbacks_value == :bulk
     end
 
     def perform
       items = @queued_items
+      clients = @queued_clients
       @queued_items = []
+      @queued_clients = []
       return if items.empty?
 
-      response = Searchkick.client.bulk(body: items)
+      first_error = nil
+      items.zip(clients).group_by { |_, client| client.object_id }.each_value do |entries|
+        client = entries.first.last
+        begin
+          perform_items(client, entries.map(&:first))
+        rescue => e
+          first_error ||= e
+        end
+      end
+      raise first_error if first_error
+
+      nil
+    end
+
+    private
+
+    def perform_items(client, items)
+      response = client.bulk(body: items)
       retry_items = []
       first_with_error = nil
 
@@ -46,10 +67,9 @@ module Searchkick
       if retry_items.any?
         # retry items are full index_data with no @on_missing_full_builder set,
         # so they cannot trigger another retry — recursion depth is bounded at 1
-        @queued_items = retry_items
         retry_error = nil
         begin
-          perform
+          perform_items(client, retry_items)
         rescue ImportError => retry_error
         end
         raise retry_error if retry_error && first_with_error.nil?

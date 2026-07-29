@@ -8,6 +8,10 @@ module Searchkick
       @klass_document_type = {} # cache
     end
 
+    def client
+      Searchkick.client(options[:client_name])
+    end
+
     def index_options
       IndexOptions.new(self).index_options
     end
@@ -124,7 +128,7 @@ module Searchkick
     def clean_indices
       indices = all_indices(unaliased: true)
       indices.each do |index|
-        Index.new(index).delete
+        Index.new(index, @options).delete
       end
       indices
     end
@@ -190,7 +194,7 @@ module Searchkick
     end
 
     def reload_synonyms
-      if Searchkick.opensearch?
+      if Searchkick.opensearch?(client)
         client.transport.perform_request "POST", "_plugins/_refresh_search_analyzers/#{CGI.escape(name)}"
       else
         begin
@@ -321,16 +325,12 @@ module Searchkick
 
     protected
 
-    def client
-      Searchkick.client
-    end
-
     def queue_index(records, full_reindex_method_name: nil)
-      Searchkick.indexer.queue(records.map { |r| RecordData.new(self, r).index_data(full_reindex_method_name: full_reindex_method_name) })
+      Searchkick.indexer.queue(records.map { |r| RecordData.new(self, r).index_data(full_reindex_method_name: full_reindex_method_name) }, client: client)
     end
 
     def queue_delete(records)
-      Searchkick.indexer.queue(records.reject { |r| r.id.blank? }.map { |r| RecordData.new(self, r).delete_data })
+      Searchkick.indexer.queue(records.reject { |r| r.id.blank? }.map { |r| RecordData.new(self, r).delete_data }, client: client)
     end
 
     def queue_update(records, method_name, on_missing: nil, full_reindex_method_name: nil)
@@ -349,7 +349,7 @@ module Searchkick
           end
         end
       end
-      Searchkick.indexer.queue(items)
+      Searchkick.indexer.queue(items, client: client)
     end
 
     def relation_indexer

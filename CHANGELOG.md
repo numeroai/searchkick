@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Added per-model named clients with the `client_name` option
 - Added `:queue` mode support for partial reindexing (`Model.reindex(:method_name, mode: :queue)`, including `on_missing` and `full_reindex_method_name`). Note: queue entries now use a binary-sentinel framing in addition to the legacy `id|routing` format — workers must be upgraded before publishers to avoid stale workers misinterpreting new entries.
 
 ## 6.1.2 (2026-06-04)

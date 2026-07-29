@@ -60,19 +60,29 @@ module Searchkick
   ON_MISSING_VALUES = [:raise, :ignore, :full].freeze
 
   class << self
-    attr_accessor :search_method_name, :timeout, :models, :client_options, :redis, :index_prefix, :index_suffix, :queue_name, :model_options, :client_type, :parent_job
-    attr_writer :client, :env, :search_timeout
+    attr_accessor :search_method_name, :timeout, :models, :client_options, :clients, :redis, :index_prefix, :index_suffix, :queue_name, :model_options, :client_type, :parent_job
+    attr_writer :env, :search_timeout
     attr_reader :aws_credentials
   end
   self.search_method_name = :search
   self.timeout = 10
   self.models = []
   self.client_options = {}
+  self.clients = {}
   self.queue_name = :searchkick
   self.model_options = {}
   self.parent_job = "ActiveJob::Base"
 
-  def self.client
+  def self.client(name = nil)
+    if name
+      client_names = [name, name.to_s]
+      client_names << name.to_sym if name.respond_to?(:to_sym)
+      client_names.uniq.each do |client_name|
+        return clients[client_name] if clients.key?(client_name)
+      end
+      raise Error, "Unknown client: #{name.inspect}"
+    end
+
     @client ||= begin
       client_type =
         if self.client_type
@@ -111,6 +121,11 @@ module Searchkick
     end
   end
 
+  def self.client=(client)
+    @client = client
+    clear_server_info
+  end
+
   def self.env
     @env ||= ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development"
   end
@@ -120,31 +135,29 @@ module Searchkick
   end
 
   # private
-  def self.server_info
-    @server_info ||= client.info
+  def self.server_info(client = self.client)
+    @server_info ||= {}.compare_by_identity
+    @server_info[client] ||= client.info
   end
 
-  def self.server_version
-    @server_version ||= server_info["version"]["number"]
+  def self.server_version(client = self.client)
+    server_info(client)["version"]["number"]
   end
 
-  def self.opensearch?
-    unless defined?(@opensearch)
-      @opensearch = server_info["version"]["distribution"] == "opensearch"
-    end
-    @opensearch
+  def self.opensearch?(client = self.client)
+    server_info(client)["version"]["distribution"] == "opensearch"
   end
 
-  def self.server_below?(version)
-    Gem::Version.new(server_version.split("-")[0]) < Gem::Version.new(version.split("-")[0])
+  def self.server_below?(version, client = self.client)
+    Gem::Version.new(server_version(client).split("-")[0]) < Gem::Version.new(version.split("-")[0])
   end
 
   # private
-  def self.knn_support?
-    if opensearch?
-      !server_below?("2.4.0")
+  def self.knn_support?(client = self.client)
+    if opensearch?(client)
+      !server_below?("2.4.0", client)
     else
-      !server_below?("8.6.0")
+      !server_below?("8.6.0", client)
     end
   end
 
@@ -248,6 +261,12 @@ module Searchkick
 
     @aws_credentials = creds
     @client = nil # reset client
+    clear_server_info
+  end
+
+  # private
+  def self.clear_server_info
+    @server_info = {}.compare_by_identity
   end
 
   def self.reindex_status(index_name)

@@ -1,8 +1,9 @@
 module Searchkick
   class IndexOptions
-    attr_reader :options
+    attr_reader :index, :options
 
     def initialize(index)
+      @index = index
       @options = index.options
     end
 
@@ -170,15 +171,15 @@ module Searchkick
       }
 
       if options[:knn]
-        unless Searchkick.knn_support?
-          if Searchkick.opensearch?
+        unless Searchkick.knn_support?(index.client)
+          if Searchkick.opensearch?(index.client)
             raise Error, "knn requires OpenSearch 2.4+"
           else
             raise Error, "knn requires Elasticsearch 8.6+"
           end
         end
 
-        if Searchkick.opensearch? && options[:knn].any? { |_, v| !v[:distance].nil? }
+        if Searchkick.opensearch?(index.client) && options[:knn].any? { |_, v| !v[:distance].nil? }
           # only enable if doing approximate search
           settings[:index][:knn] = true
         end
@@ -435,7 +436,7 @@ module Searchkick
         distance = knn_options[:distance]
         quantization = knn_options[:quantization]
 
-        if Searchkick.opensearch?
+        if Searchkick.opensearch?(index.client)
           if distance.nil?
             # avoid server crash if method not specified
             raise ArgumentError, "Must specify a distance for OpenSearch"
