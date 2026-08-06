@@ -2,10 +2,12 @@ module Searchkick
   class BulkReindexJob < Searchkick.parent_job.constantize
     queue_as { Searchkick.queue_name }
 
-    def perform(class_name:, record_ids: nil, index_name: nil, method_name: nil, batch_id: nil, min_id: nil, max_id: nil, ignore_missing: nil, on_missing: nil, full_reindex_method_name: nil)
+    # cluster: pins this job to a cluster. Absent means unpinned - resolve the
+    # model's configured cluster, which is the legacy behavior.
+    def perform(class_name:, record_ids: nil, index_name: nil, cluster: nil, method_name: nil, batch_id: nil, min_id: nil, max_id: nil, ignore_missing: nil, on_missing: nil, full_reindex_method_name: nil)
       on_missing = Searchkick.normalize_on_missing(on_missing, ignore_missing)
       model = Searchkick.load_model(class_name)
-      index = model.searchkick_index(name: index_name)
+      index = model.searchkick_index(name: index_name, cluster: cluster&.to_sym)
 
       record_ids ||= min_id..max_id
 

@@ -26,7 +26,7 @@ module Searchkick
       end
 
       unknown_keywords = options.keys - [:aggs, :block, :body, :body_options, :boost,
-        :boost_by, :boost_by_distance, :boost_by_recency, :boost_where, :conversions, :conversions_v2, :conversions_term, :debug, :emoji, :exclude, :explain,
+        :boost_by, :boost_by_distance, :boost_by_recency, :boost_where, :cluster, :conversions, :conversions_v2, :conversions_term, :debug, :emoji, :exclude, :explain,
         :fields, :highlight, :includes, :index_name, :indices_boost, :knn, :limit, :load,
         :match, :misspellings, :models, :model_includes, :offset, :opaque_id, :operator, :order, :padding, :page, :per_page, :profile,
         :request_params, :routing, :scope_results, :scroll, :select, :similar, :smart_aggs, :suggest, :total_entries, :track, :type, :where]
@@ -56,6 +56,40 @@ module Searchkick
 
     def searchkick_index
       klass ? klass.searchkick_index : nil
+    end
+
+    # A search request goes to exactly one cluster - params joins every index
+    # into a single comma-separated string for one client.search call, so a
+    # request spanning clusters is unsatisfiable.
+    def cluster
+      return @cluster if defined?(@cluster)
+
+      @cluster =
+        if options.key?(:cluster)
+          options[:cluster]
+        else
+          sources =
+            if options[:models]
+              Array(options[:models])
+            elsif options[:index_name]
+              Array(options[:index_name])
+            else
+              [klass].compact
+            end
+
+          # a raw index name contributes the default cluster rather than nothing,
+          # so mixing it with a non-default model is caught below
+          names =
+            sources.map do |source|
+              source.respond_to?(:searchkick_options) ? source.searchkick_options[:cluster] : nil
+            end.uniq
+
+          if names.size > 1
+            raise Error, "Cannot search across clusters (#{names.map { |n| (n || Searchkick::DEFAULT_CLUSTER).inspect }.join(", ")}) - a search request targets one cluster, so split it into separate searches"
+          end
+
+          names.first
+        end
     end
 
     def searchkick_options
@@ -133,13 +167,15 @@ module Searchkick
         index_mapping: @index_mapping,
         suggest: options[:suggest],
         scroll: options[:scroll],
-        opaque_id: options[:opaque_id]
+        opaque_id: options[:opaque_id],
+        # so scroll and clear_scroll stay on this query's cluster
+        cluster: cluster
       }
 
       if options[:debug]
-        server = Searchkick.opensearch? ? "OpenSearch" : "Elasticsearch"
+        server = Searchkick.opensearch?(cluster) ? "OpenSearch" : "Elasticsearch"
         puts "Searchkick #{Searchkick::VERSION}"
-        puts "#{server} #{Searchkick.server_version}"
+        puts "#{server} #{Searchkick.server_version(cluster)}"
         puts
 
         puts "Model Options"
@@ -230,7 +266,7 @@ module Searchkick
         query: params
       }
       ActiveSupport::Notifications.instrument("search.searchkick", event) do
-        Searchkick.client.search(params)
+        Searchkick.client(cluster).search(params)
       end
     end
 
@@ -495,7 +531,7 @@ module Searchkick
         set_highlights(payload, fields) if options[:highlight]
 
         # timeout shortly after client times out
-        payload[:timeout] ||= "#{((Searchkick.search_timeout + 1) * 1000).round}ms"
+        payload[:timeout] ||= "#{((Searchkick.search_timeout(cluster) + 1) * 1000).round}ms"
 
         # An empty array will cause only the _id and _type for each hit to be returned
         # https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-source-filtering.html
@@ -981,7 +1017,7 @@ module Searchkick
         raise ArgumentError, "distance must match searchkick options for approximate search"
       end
 
-      if Searchkick.opensearch?
+      if Searchkick.opensearch?(cluster)
         if exact
           # https://opensearch.org/docs/latest/search-plugins/knn/knn-score-script/#spaces
           space_type =
@@ -1016,11 +1052,11 @@ module Searchkick
                   space_type: space_type
                 }
               },
-              boost: distance == "cosine" && Searchkick.server_below?("2.19.0") ? 0.5 : 1.0
+              boost: distance == "cosine" && Searchkick.server_below?("2.19.0", cluster) ? 0.5 : 1.0
             }
           }
         else
-          if ef_search && Searchkick.server_below?("2.16.0")
+          if ef_search && Searchkick.server_below?("2.16.0", cluster)
             raise Error, "ef_search requires OpenSearch 2.16+"
           end
 
@@ -1037,7 +1073,7 @@ module Searchkick
       else
         if exact
           # prevent incorrect distances/results with Elasticsearch 9.0.0-rc1
-          if !Searchkick.server_below?("9.0.0") && field_options[:distance] == "cosine" && distance != "cosine"
+          if !Searchkick.server_below?("9.0.0", cluster) && field_options[:distance] == "cosine" && distance != "cosine"
             raise ArgumentError, "distance must match searchkick options"
           end
 

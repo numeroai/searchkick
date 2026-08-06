@@ -5,6 +5,14 @@ require "active_support/notifications"
 
 ENV["RACK_ENV"] = "test"
 
+# A second named cluster for the multi-cluster tests. It points at the same
+# server (CI runs one), so an index_prefix keeps its indices distinct - what is
+# under test is the routing, not the topology.
+#
+# Must be registered before the first Searchkick.client access below, since
+# assigning clusters resets the client and server_info memos.
+Searchkick.clusters = {secondary: {}}
+
 # for reloadable synonyms
 if ENV["CI"]
   ENV["ES_PATH"] ||= File.join(ENV["HOME"], Searchkick.opensearch? ? "opensearch" : "elasticsearch", Searchkick.server_version)

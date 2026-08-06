@@ -40,7 +40,21 @@ module Searchkick
     end
 
     def client
-      Searchkick.client
+      Searchkick.client(cluster)
+    end
+
+    # One msearch body goes to one cluster. Splitting across clusters would
+    # change the notification payload and response correlation for a case the
+    # gem has no caller for, so raise instead.
+    def cluster
+      return @cluster if defined?(@cluster)
+
+      clusters = queries.map(&:cluster).uniq
+      if clusters.size > 1
+        raise Error, "Cannot multi search across clusters (#{clusters.map { |c| (c || Searchkick::DEFAULT_CLUSTER).inspect }.join(", ")}) - group the queries by cluster and call Searchkick.multi_search once per cluster"
+      end
+
+      @cluster = clusters.first
     end
   end
 end

@@ -192,7 +192,7 @@ module Searchkick
             body: {scroll_id: scroll_id}
           }
           params[:opaque_id] = options[:opaque_id] if options[:opaque_id]
-          Results.new(@klass, Searchkick.client.scroll(params), @options)
+          Results.new(@klass, Searchkick.client(scroll_cluster).scroll(params), @options)
         rescue => e
           if Searchkick.not_found_error?(e) && e.message =~ /search_context_missing_exception/i
             raise Error, "Scroll id has expired"
@@ -208,13 +208,19 @@ module Searchkick
         # try to clear scroll
         # not required as scroll will expire
         # but there is a cost to open scrolls
-        Searchkick.client.clear_scroll({body: {scroll_id: scroll_id}})
+        Searchkick.client(scroll_cluster).clear_scroll({body: {scroll_id: scroll_id}})
       rescue => e
         raise e unless Searchkick.transport_error?(e)
       end
     end
 
     private
+
+    # Query threads this through so a scroll continues on the same cluster.
+    # @options can be nil - Relation#respond_to_missing? builds Results.new(nil, nil, nil)
+    def scroll_cluster
+      @options && @options[:cluster]
+    end
 
     attr_reader :klass, :options
 

@@ -170,6 +170,8 @@ module Searchkick
       job_options ||= {}
       # TODO expire Redis key
       Searchkick.with_redis { |r| r.call("SADD", batches_key, [batch_id]) }
+      # pin only for a named cluster, so default work keeps the same job payload
+      options[:cluster] = index.cluster.to_s if index.cluster
       Searchkick::BulkReindexJob.set(**job_options).perform_later(
         class_name: class_name,
         index_name: index.name,

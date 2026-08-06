@@ -27,6 +27,12 @@ class Product
   field :embedding4, type: Array
 end
 
+class AltProduct
+  include Mongoid::Document
+
+  field :name
+end
+
 class Store
   include Mongoid::Document
   has_many :products

@@ -8,6 +8,15 @@ module Searchkick
       @klass_document_type = {} # cache
     end
 
+    # nil means the default cluster
+    def cluster
+      options[:cluster]
+    end
+
+    def client
+      Searchkick.client(cluster)
+    end
+
     def index_options
       IndexOptions.new(self).index_options
     end
@@ -124,7 +133,9 @@ module Searchkick
     def clean_indices
       indices = all_indices(unaliased: true)
       indices.each do |index|
-        Index.new(index).delete
+        # pass @options so the delete lands on the same cluster all_indices
+        # enumerated - without it these deletes go to the default cluster
+        Index.new(index, @options).delete
       end
       indices
     end
@@ -190,7 +201,7 @@ module Searchkick
     end
 
     def reload_synonyms
-      if Searchkick.opensearch?
+      if Searchkick.opensearch?(cluster)
         client.transport.perform_request "POST", "_plugins/_refresh_search_analyzers/#{CGI.escape(name)}"
       else
         begin
@@ -205,7 +216,7 @@ module Searchkick
     # queue
 
     def reindex_queue
-      ReindexQueue.new(name)
+      ReindexQueue.new(name, cluster)
     end
 
     # reindex
@@ -321,16 +332,12 @@ module Searchkick
 
     protected
 
-    def client
-      Searchkick.client
-    end
-
     def queue_index(records, full_reindex_method_name: nil)
-      Searchkick.indexer.queue(records.map { |r| RecordData.new(self, r).index_data(full_reindex_method_name: full_reindex_method_name) })
+      Searchkick.indexer.queue(records.map { |r| RecordData.new(self, r).index_data(full_reindex_method_name: full_reindex_method_name) }, cluster: cluster)
     end
 
     def queue_delete(records)
-      Searchkick.indexer.queue(records.reject { |r| r.id.blank? }.map { |r| RecordData.new(self, r).delete_data })
+      Searchkick.indexer.queue(records.reject { |r| r.id.blank? }.map { |r| RecordData.new(self, r).delete_data }, cluster: cluster)
     end
 
     def queue_update(records, method_name, on_missing: nil, full_reindex_method_name: nil)
@@ -349,7 +356,7 @@ module Searchkick
           end
         end
       end
-      Searchkick.indexer.queue(items)
+      Searchkick.indexer.queue(items, cluster: cluster)
     end
 
     def relation_indexer
@@ -386,7 +393,11 @@ module Searchkick
       else
         clean_indices unless retain
 
-        index_options = relation.searchkick_index_options
+        # source the option hash from the relation (preserves STI behavior - reindex
+        # resolves relation through searchkick_klass above) but override the cluster
+        # with this index's, so version-dependent mappings are generated against the
+        # cluster actually being written. A no-op when the clusters already agree.
+        index_options = Index.new(name, relation.searchkick_klass.searchkick_options.merge(cluster: cluster)).index_options
         index_options.deep_merge!(settings: {index: {refresh_interval: refresh_interval}}) if refresh_interval
         index = create_index(index_options: index_options)
       end

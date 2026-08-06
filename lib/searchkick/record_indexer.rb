@@ -25,6 +25,8 @@ module Searchkick
         if full_reindex_method_name
           extra_options[:full_reindex_method_name] = full_reindex_method_name.to_s
         end
+        # pin only for a named cluster, so default work keeps the same job payload
+        extra_options[:cluster] = index.cluster.to_s if index.cluster
 
 
         # we could likely combine ReindexV2Job, BulkReindexJob, and ProcessBatchJob

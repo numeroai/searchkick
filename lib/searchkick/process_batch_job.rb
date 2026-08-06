@@ -2,9 +2,11 @@ module Searchkick
   class ProcessBatchJob < Searchkick.parent_job.constantize
     queue_as { Searchkick.queue_name }
 
-    def perform(class_name:, record_ids:, index_name: nil)
+    # cluster: pins this job to a cluster. Absent means unpinned - resolve the
+    # model's configured cluster, which is the legacy behavior.
+    def perform(class_name:, record_ids:, index_name: nil, cluster: nil)
       model = Searchkick.load_model(class_name)
-      index = model.searchkick_index(name: index_name)
+      index = model.searchkick_index(name: index_name, cluster: cluster&.to_sym)
 
       items = record_ids.map { |r| ReindexQueue.parse(r) }
 

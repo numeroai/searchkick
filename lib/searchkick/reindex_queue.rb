@@ -7,10 +7,11 @@ module Searchkick
     # legacy encoder only writes id + "|" + escaped routing.
     FORMAT_SENTINEL = "\x01\x01".freeze
 
-    attr_reader :name
+    attr_reader :name, :cluster
 
-    def initialize(name)
+    def initialize(name, cluster = nil)
       @name = name
+      @cluster = cluster
 
       raise Error, "Searchkick.redis not set" unless Searchkick.redis
     end
@@ -70,8 +71,15 @@ module Searchkick
 
     private
 
+    # Index names are identical across clusters, so named clusters get their own
+    # key or their consumers would RPOP each other's ids. The default key is
+    # unchanged, so in-flight entries stay readable across the deploy.
     def redis_key
-      "searchkick:reindex_queue:#{name}"
+      if cluster.nil? || cluster.to_sym == Searchkick::DEFAULT_CLUSTER
+        "searchkick:reindex_queue:#{name}"
+      else
+        "searchkick:reindex_queue:#{cluster}:#{name}"
+      end
     end
 
     def escape(value)
