@@ -121,6 +121,14 @@ module Searchkick
   end
 
   # private
+  # nil, :default, and "default" all name the same physical cluster. Use this
+  # anywhere cluster identity is compared or memoized - but not for job
+  # serialization, where nil (unpinned) and :default (pinned) differ.
+  def self.canonical_cluster(cluster)
+    cluster&.to_sym || DEFAULT_CLUSTER
+  end
+
+  # private
   def self.cluster_config(cluster)
     return {} if cluster.nil? || cluster.to_sym == DEFAULT_CLUSTER
 
@@ -153,7 +161,7 @@ module Searchkick
   end
 
   def self.client(cluster = nil)
-    (@clients ||= {})[cluster&.to_sym || DEFAULT_CLUSTER] ||= build_client(cluster)
+    (@clients ||= {})[canonical_cluster(cluster)] ||= build_client(cluster)
   end
 
   def self.client=(value)
@@ -221,7 +229,7 @@ module Searchkick
 
   # private
   def self.server_info(cluster = nil)
-    (@server_info ||= {})[cluster&.to_sym || DEFAULT_CLUSTER] ||= client(cluster).info
+    (@server_info ||= {})[canonical_cluster(cluster)] ||= client(cluster).info
   end
 
   # memoized through server_info, so these stay plain lookups

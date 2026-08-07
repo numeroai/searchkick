@@ -66,7 +66,7 @@ module Searchkick
 
       @cluster =
         if options.key?(:cluster)
-          options[:cluster]
+          Searchkick.canonical_cluster(options[:cluster])
         else
           sources =
             if options[:models]
@@ -77,18 +77,21 @@ module Searchkick
               [klass].compact
             end
 
-          # a raw index name contributes the default cluster rather than nothing,
-          # so mixing it with a non-default model is caught below
+          # canonicalized, so a model that omits `cluster:` and one that names
+          # :default explicitly are recognized as the same cluster. A raw index
+          # name contributes the default rather than nothing, so mixing it with
+          # a non-default model is still caught.
           names =
             sources.map do |source|
-              source.respond_to?(:searchkick_options) ? source.searchkick_options[:cluster] : nil
+              name = source.searchkick_options[:cluster] if source.respond_to?(:searchkick_options)
+              Searchkick.canonical_cluster(name)
             end.uniq
 
           if names.size > 1
-            raise Error, "Cannot search across clusters (#{names.map { |n| (n || Searchkick::DEFAULT_CLUSTER).inspect }.join(", ")}) - a search request targets one cluster, so split it into separate searches"
+            raise Error, "Cannot search across clusters (#{names.map(&:inspect).join(", ")}) - a search request targets one cluster, so split it into separate searches"
           end
 
-          names.first
+          names.first || Searchkick::DEFAULT_CLUSTER
         end
     end
 

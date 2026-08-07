@@ -113,6 +113,25 @@ class MultiClusterTest < Minitest::Test
     assert_equal ["Explicit Cluster"], results.map(&:name)
   end
 
+  # nil and :default name the same cluster, so mixing them is not a conflict
+  def test_implicit_and_explicit_default_are_the_same_cluster
+    Searchkick.multi_search([
+      Product.search("*", load: false),
+      Product.search("*", cluster: :default, load: false)
+    ])
+
+    assert_equal Searchkick::DEFAULT_CLUSTER, Product.search("*", load: false).send(:query).cluster
+    assert_equal Searchkick::DEFAULT_CLUSTER, Product.search("*", cluster: :default, load: false).send(:query).cluster
+    assert_equal Searchkick::DEFAULT_CLUSTER, Product.search("*", cluster: "default", load: false).send(:query).cluster
+  end
+
+  # canonicalizing identity must not leak into job payloads: nil is unpinned,
+  # :default is pinned, and only the latter serializes
+  def test_canonicalization_does_not_pin_default_jobs
+    assert_nil Product.searchkick_index.cluster
+    assert_equal :default, Product.searchkick_index(cluster: :default).cluster
+  end
+
   def test_multi_search_across_clusters_raises
     error = assert_raises(Searchkick::Error) do
       Searchkick.multi_search([Product.search("*", load: false), AltProduct.search("*", load: false)])

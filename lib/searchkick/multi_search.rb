@@ -49,9 +49,11 @@ module Searchkick
     def cluster
       return @cluster if defined?(@cluster)
 
-      clusters = queries.map(&:cluster).uniq
+      # canonicalized: an implicit default and an explicit :default are the
+      # same cluster and must not be treated as a conflict
+      clusters = queries.map { |q| Searchkick.canonical_cluster(q.cluster) }.uniq
       if clusters.size > 1
-        raise Error, "Cannot multi search across clusters (#{clusters.map { |c| (c || Searchkick::DEFAULT_CLUSTER).inspect }.join(", ")}) - group the queries by cluster and call Searchkick.multi_search once per cluster"
+        raise Error, "Cannot multi search across clusters (#{clusters.map(&:inspect).join(", ")}) - group the queries by cluster and call Searchkick.multi_search once per cluster"
       end
 
       @cluster = clusters.first
