@@ -8,9 +8,9 @@ ENV["RACK_ENV"] = "test"
 # A second named cluster for the multi-cluster tests.
 #
 # With SECONDARY_OPENSEARCH_URL (or SECONDARY_ELASTICSEARCH_URL) set, this is a
-# genuinely separate server — see docker-compose.yml. Unset, it falls back to
-# the same server CI runs, where AltProduct's index_prefix keeps the indices
-# distinct; the routing is what is under test either way.
+# genuinely separate server. Unset, it falls back to the same server CI runs,
+# where AltProduct's index_prefix keeps the indices distinct; the routing is
+# what is under test either way.
 #
 # Must be registered before the first Searchkick.client access below, since
 # assigning clusters resets the client and server_info memos.
