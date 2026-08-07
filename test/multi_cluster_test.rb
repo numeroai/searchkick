@@ -93,12 +93,6 @@ class MultiClusterTest < Minitest::Test
 
   # a raw index name contributes the default cluster, so mixing it with a
   # secondary model is caught rather than sent to the wrong server
-  def test_search_mixing_raw_index_name_and_secondary_model_raises
-    assert_raises(Searchkick::Error) do
-      Searchkick.search("*", index_name: [AltProduct, "some_raw_index"], load: false).to_a
-    end
-  end
-
   # a raw index name carries no cluster, so the model must still decide -
   # otherwise this silently queries that index name on the default cluster
   def test_raw_index_name_keeps_the_models_cluster
@@ -121,6 +115,7 @@ class MultiClusterTest < Minitest::Test
   def test_index_name_naming_a_model_on_another_cluster_raises
     assert_raises(ArgumentError) { AltProduct.search("*", index_name: [Product], load: false) }
     assert_raises(Searchkick::Error) { cluster_for(Searchkick.search("*", index_name: [AltProduct, Product], load: false)) }
+    assert_raises(Searchkick::Error) { cluster_for(Searchkick.search("*", index_name: [AltProduct, "raw_name"], load: false)) }
   end
 
   def test_explicit_cluster_option

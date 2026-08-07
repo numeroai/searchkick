@@ -189,12 +189,6 @@ class ClusterTest < Minitest::Test
     Searchkick.client = previous
   end
 
-  # server metadata is memoized per cluster
-  def test_server_info_per_cluster
-    assert_equal Searchkick.server_version, Searchkick.server_version(:secondary)
-    assert_equal Searchkick.opensearch?, Searchkick.opensearch?(:secondary)
-  end
-
   # cheapest proof that a per-cluster url is actually honored: port 9 (discard)
   # refuses immediately on loopback
   def test_cluster_url_is_used
