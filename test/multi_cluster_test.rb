@@ -36,9 +36,10 @@ class MultiClusterTest < Minitest::Test
   # reindex + search round trip on the secondary cluster
 
   def test_reindex_and_search
-    store_names ["Product A", "Product B"], AltProduct
+    # distinctive terms - single letters are within misspelling distance of each other
+    store_names ["Apple", "Banana"], AltProduct
 
-    assert_equal ["Product A"], AltProduct.search("product a", fields: [:name], load: false).map(&:name)
+    assert_equal ["Apple"], AltProduct.search("apple", fields: [:name], load: false).map(&:name)
   end
 
   def test_documents_do_not_leak_to_the_default_cluster
@@ -120,15 +121,14 @@ class MultiClusterTest < Minitest::Test
   end
 
   def test_multi_search_on_one_cluster_still_works
-    store_names ["Multi A"], AltProduct
-    store_names ["Multi B"], AltProduct
+    store_names ["Apple", "Banana"], AltProduct
 
-    a = AltProduct.search("multi a", fields: [:name], load: false)
-    b = AltProduct.search("multi b", fields: [:name], load: false)
-    Searchkick.multi_search([a, b])
+    apple = AltProduct.search("apple", fields: [:name], load: false)
+    banana = AltProduct.search("banana", fields: [:name], load: false)
+    Searchkick.multi_search([apple, banana])
 
-    assert_equal ["Multi A"], a.map(&:name)
-    assert_equal ["Multi B"], b.map(&:name)
+    assert_equal ["Apple"], apple.map(&:name)
+    assert_equal ["Banana"], banana.map(&:name)
   end
 
   # scroll must continue on the query's cluster
