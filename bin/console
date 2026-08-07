@@ -10,11 +10,14 @@
 #
 # Product is on the default cluster, AltProduct on :secondary.
 
-require_relative "../test/test_helper"
+# test_helper requires minitest/autorun, whose at_exit hook would run the
+# (empty) suite when the console exits. Minitest.autorun installs that hook
+# `unless @@installed_at_exit`, and checks it at require time - so claim it
+# before test_helper loads. Setting it afterwards is too late.
+require "minitest"
+Minitest.class_variable_set(:@@installed_at_exit, true)
 
-# test_helper requires minitest/autorun, which would try to run the (empty)
-# suite when the console exits
-Minitest.instance_variable_set(:@installed_at_exit, true)
+require_relative "../test/test_helper"
 
 def cluster_report
   Searchkick.models.sort_by(&:name).each do |model|
