@@ -149,11 +149,34 @@ class ClusterTest < Minitest::Test
     assert Searchkick.client(:secondary).equal?(Searchkick.client(:secondary))
   end
 
-  def test_assigning_clusters_resets_clients
+  # reassigning a named cluster must drop its memoized client, since its config
+  # may have changed
+  def test_assigning_clusters_resets_named_cluster_clients
+    Searchkick.clusters = {archive: {}}
+    before = Searchkick.client(:archive)
+    Searchkick.clusters = {archive: {url: "http://127.0.0.1:9"}}
+
+    refute Searchkick.client(:archive).equal?(before)
+  end
+
+  # ...but the default cluster is untouched by the registry, so its client must
+  # survive - it may have been installed through Searchkick.client=
+  def test_assigning_clusters_keeps_the_default_client
     before = Searchkick.client
     Searchkick.clusters = {archive: {}}
 
-    refute Searchkick.client.equal?(before)
+    assert Searchkick.client.equal?(before)
+  end
+
+  def test_assigning_clusters_keeps_a_custom_default_client
+    previous = Searchkick.client
+    custom = Object.new
+    Searchkick.client = custom
+    Searchkick.clusters = {archive: {}}
+
+    assert Searchkick.client.equal?(custom)
+  ensure
+    Searchkick.client = previous
   end
 
   def test_client_writer_sets_default

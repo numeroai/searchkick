@@ -97,9 +97,15 @@ module Searchkick
   end
 
   # private
+  # Drops memoized clients for named clusters, whose config just changed.
+  #
+  # The default cluster is left alone: cluster_config returns {} for it, so
+  # nothing in the registry can affect how its client is built - and it may hold
+  # a client installed through Searchkick.client=, which resetting would
+  # silently replace with a freshly built one.
   def self.reset_clusters
-    @clients = {}
-    @server_info = {}
+    @clients = (@clients || {}).slice(DEFAULT_CLUSTER)
+    @server_info = (@server_info || {}).slice(DEFAULT_CLUSTER)
   end
 
   # private
