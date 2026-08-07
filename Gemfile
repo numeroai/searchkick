@@ -17,3 +17,6 @@ gem "gemoji-parser"
 gem "parallel_tests"
 gem "typhoeus", platform: :mri
 gem "cgi" # for elasticsearch
+
+# for bin/console (irb is not a default gem as of Ruby 4.0)
+gem "irb"

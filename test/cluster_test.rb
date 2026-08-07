@@ -51,10 +51,22 @@ class ClusterTest < Minitest::Test
   end
 
   def test_registry_does_not_freeze_the_callers_hash
-    config = {timeout: 30}
+    config = {timeout: 30, client_options: {retry_on_failure: 5}}
     Searchkick.clusters = {archive: config}
 
     refute config.frozen?
+    refute config[:client_options].frozen?
+  end
+
+  # an injected client has to stay the caller's own object - a copy would break
+  # stubs and identity checks against the instance they handed us
+  def test_injected_client_is_not_duplicated
+    injected = Object.new
+    Searchkick.clusters = {custom: {client: injected}}
+
+    assert Searchkick.client(:custom).equal?(injected)
+    assert Searchkick.clusters[:custom][:client].equal?(injected)
+    refute injected.frozen?
   end
 
   # config fallback

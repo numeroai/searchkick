@@ -1,7 +1,6 @@
 # dependencies
 require "active_support"
 require "active_support/core_ext/hash/deep_merge"
-require "active_support/core_ext/object/deep_dup"
 require "active_support/core_ext/module/attr_internal"
 require "active_support/core_ext/module/delegation"
 require "active_support/deprecation"
@@ -87,9 +86,7 @@ module Searchkick
   # Assignment-only and frozen: mutating the returned hash would bypass
   # normalization and leave the memoized clients stale.
   def self.clusters=(value)
-    # deep_dup first: Hash#to_h returns self, so freezing in place would freeze
-    # a hash the caller still owns
-    value = (value || {}).to_h { |name, config| [name.to_sym, deep_freeze(config.to_h.deep_dup)] }
+    value = (value || {}).to_h { |name, config| [name.to_sym, freeze_config(config.to_h)] }
 
     if value.key?(DEFAULT_CLUSTER)
       raise Error, "Configure the default cluster with Searchkick.timeout, Searchkick.client_options, etc., not Searchkick.clusters[#{DEFAULT_CLUSTER.inspect}]"
@@ -106,18 +103,18 @@ module Searchkick
   end
 
   # private
-  # freeze the config structure without touching objects the caller still owns,
-  # like a client passed via `client:`
-  def self.deep_freeze(value)
+  # Copy and freeze the config's containers so the registry cannot be mutated
+  # after assignment, without freezing the hash the caller still holds.
+  #
+  # Leaf values are carried by reference, never duplicated: a client passed via
+  # `client:` must stay the caller's own object, or stubs and identity checks
+  # against it would not apply to the client Searchkick actually uses.
+  def self.freeze_config(value)
     case value
     when Hash
-      value.each_value { |v| deep_freeze(v) }
-      value.freeze
+      value.to_h { |k, v| [k, freeze_config(v)] }.freeze
     when Array
-      value.each { |v| deep_freeze(v) }
-      value.freeze
-    when String
-      value.freeze
+      value.map { |v| freeze_config(v) }.freeze
     else
       value
     end

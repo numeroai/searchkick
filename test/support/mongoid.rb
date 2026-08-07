@@ -2,7 +2,18 @@ Mongoid.logger = $logger
 Mongo::Logger.logger = $logger if defined?(Mongo::Logger)
 
 Mongoid.configure do |config|
-  config.connect_to "searchkick_test", server_selection_timeout: 1
+  # MONGODB_HOST lets this point at a standalone mongo on another port - see
+  # docker-compose.yml. A replica-set deployment (Atlas Local, for one)
+  # advertises its members by container hostname, which the host cannot resolve.
+  config.load_configuration(
+    "clients" => {
+      "default" => {
+        "database" => "searchkick_test",
+        "hosts" => [ENV.fetch("MONGODB_HOST", "localhost:27017")],
+        "options" => {"server_selection_timeout" => 1}
+      }
+    }
+  )
 end
 
 class Product

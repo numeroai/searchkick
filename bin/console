@@ -1,0 +1,56 @@
+#!/usr/bin/env ruby
+# Interactive console with the test harness loaded: in-memory sqlite, both
+# clusters registered, and every test model available.
+#
+#   docker compose up -d
+#   OPENSEARCH_URL=http://localhost:9250 \
+#     SECONDARY_OPENSEARCH_URL=http://localhost:9251 \
+#     REDIS_URL=redis://localhost:6389 \
+#     BUNDLE_GEMFILE=gemfiles/opensearch2.gemfile bin/console
+#
+# Product is on the default cluster, AltProduct on :secondary.
+
+require_relative "../test/test_helper"
+
+# test_helper requires minitest/autorun, which would try to run the (empty)
+# suite when the console exits
+Minitest.instance_variable_set(:@installed_at_exit, true)
+
+def cluster_report
+  Searchkick.models.sort_by(&:name).each do |model|
+    index = model.searchkick_index
+    puts format(
+      "  %-14s cluster=%-12s index=%-42s docs=%s",
+      model.name,
+      (index.cluster || Searchkick::DEFAULT_CLUSTER).inspect,
+      index.name,
+      (index.exists? ? index.total_docs : "(no index)")
+    )
+  end
+  nil
+end
+
+puts
+puts "Clusters:"
+Searchkick.clusters.each { |name, config| puts "  #{name.inspect}: #{config[:url] || "(same server as default)"}" }
+puts "  :default: #{ENV["OPENSEARCH_URL"] || ENV["ELASTICSEARCH_URL"] || "http://localhost:9200"}"
+puts
+puts "Models:"
+cluster_report
+puts
+puts "Try:"
+puts "  Product.reindex; AltProduct.reindex"
+puts "  Product.create!(name: \"Apple\"); AltProduct.create!(name: \"Banana\")"
+puts "  Product.search(\"apple\", load: false).map(&:name)"
+puts "  AltProduct.searchkick_index.client.transport.transport.hosts"
+puts "  cluster_report"
+puts
+
+begin
+  require "irb"
+rescue LoadError
+  # irb stopped being a default gem in Ruby 4.0
+  abort "irb not available - add `gem \"irb\"` to #{ENV.fetch("BUNDLE_GEMFILE", "Gemfile")}"
+end
+
+IRB.start(__FILE__)

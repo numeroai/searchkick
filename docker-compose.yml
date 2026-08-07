@@ -41,3 +41,10 @@ services:
     image: redis:8.4-alpine
     ports:
       - "6389:6379"
+
+  # standalone, for the mongoid gemfiles:
+  #   MONGODB_HOST=localhost:27018 BUNDLE_GEMFILE=gemfiles/mongoid9.gemfile bundle exec rake test
+  mongo:
+    image: mongo:7
+    ports:
+      - "27018:27017"
