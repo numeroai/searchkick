@@ -15,6 +15,3 @@ gem "kaminari"
 gem "gemoji-parser"
 gem "parallel_tests"
 gem "typhoeus"
-
-# for bin/console (irb is not a default gem as of Ruby 4.0)
-gem "irb"
