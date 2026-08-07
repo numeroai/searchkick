@@ -10,6 +10,12 @@
 #
 # Product is on the default cluster, AltProduct on :secondary.
 
+# Before anything else, so the bundle picks the gem versions - requiring
+# minitest first would activate whatever RubyGems resolves, and bundler/setup
+# then fails with "already activated minitest X, but your Gemfile requires Y".
+# test_helper requires this too; the second require is a no-op.
+require "bundler/setup"
+
 # test_helper requires minitest/autorun, whose at_exit hook would run the
 # (empty) suite when the console exits. Minitest.autorun installs that hook
 # `unless @@installed_at_exit`, and checks it at require time - so claim it
