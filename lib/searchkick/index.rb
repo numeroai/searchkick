@@ -438,7 +438,7 @@ module Searchkick
           puts "Jobs queued. Waiting..."
           loop do
             sleep 3
-            status = Searchkick.reindex_status(index.name)
+            status = Searchkick.reindex_status(index.name, cluster: cluster)
             break if status[:completed]
             puts "Batches left: #{status[:batches_left]}"
           end

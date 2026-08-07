@@ -180,8 +180,12 @@ module Searchkick
       )
     end
 
+    # Namespaced for named clusters: index names are identical across clusters,
+    # so two concurrent async reindexes would otherwise share one batch set and
+    # each SREM could clear the other's outstanding batch - reporting completion
+    # early and promoting a half-populated index. The default key is unchanged.
     def batches_key
-      "searchkick:reindex:#{index.name}:batches"
+      Searchkick.batches_key(index.name, index.cluster)
     end
   end
 end

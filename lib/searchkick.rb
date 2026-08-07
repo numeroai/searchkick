@@ -362,12 +362,25 @@ module Searchkick
     @clients = {} # reset clients - named clusters may inherit these credentials
   end
 
-  def self.reindex_status(index_name)
+  # private
+  # keyed by cluster for named clusters only, so the default key - and any
+  # in-flight batch state under it - is untouched
+  def self.batches_key(index_name, cluster = nil)
+    if canonical_cluster(cluster) == DEFAULT_CLUSTER
+      "searchkick:reindex:#{index_name}:batches"
+    else
+      "searchkick:reindex:#{cluster}:#{index_name}:batches"
+    end
+  end
+
+  # cluster: must match the one the reindex ran against, or this reads a
+  # different key and reports completion for work that never happened
+  def self.reindex_status(index_name, cluster: nil)
     raise Error, "Redis not configured" unless redis
 
-    # redis-only (SCARD on the batches key) - no cluster needed, so the
-    # option-less Index here never resolves a client
-    batches_left = Index.new(index_name).batches_left
+    # redis-only (SCARD on the batches key), so this Index never resolves a
+    # client - but it does need the cluster to build the right key
+    batches_left = Index.new(index_name, cluster: cluster).batches_left
     {
       completed: batches_left == 0,
       batches_left: batches_left

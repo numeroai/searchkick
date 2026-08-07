@@ -1608,6 +1608,9 @@ And use:
 
 ```ruby
 Searchkick.reindex_status(index_name)
+
+# for a model on a named cluster, pass the cluster the reindex ran against
+Searchkick.reindex_status(index_name, cluster: :archive)
 ```
 
 You can also have Searchkick wait for reindexing to complete
@@ -1864,8 +1867,8 @@ live on different clusters raises. Run one search per cluster instead. The same
 applies to `Searchkick.multi_search`.
 
 Index names are unchanged by clustering, so two clusters can hold indices of the
-same name. If you point two *different* models on different clusters at the same
-index name, give one an `index_prefix` so their reindex queues stay distinct.
+same name. Reindex queue and batch keys in Redis are namespaced by cluster, so
+concurrent reindexes on different clusters do not interfere.
 
 ## Multi Search
 

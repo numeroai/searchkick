@@ -68,24 +68,7 @@ module Searchkick
         if options.key?(:cluster)
           Searchkick.canonical_cluster(options[:cluster])
         else
-          sources =
-            if options[:models]
-              Array(options[:models])
-            elsif options[:index_name]
-              Array(options[:index_name])
-            else
-              [klass].compact
-            end
-
-          # canonicalized, so a model that omits `cluster:` and one that names
-          # :default explicitly are recognized as the same cluster. A raw index
-          # name contributes the default rather than nothing, so mixing it with
-          # a non-default model is still caught.
-          names =
-            sources.map do |source|
-              name = source.searchkick_options[:cluster] if source.respond_to?(:searchkick_options)
-              Searchkick.canonical_cluster(name)
-            end.uniq
+          names = source_clusters
 
           if names.size > 1
             raise Error, "Cannot search across clusters (#{names.map(&:inspect).join(", ")}) - a search request targets one cluster, so split it into separate searches"
@@ -224,6 +207,26 @@ module Searchkick
     end
 
     private
+
+    # Models decide the cluster. A raw string in index_name: carries no cluster
+    # of its own, so it only implies the default when there is no model to ask -
+    # otherwise `NamedClusterModel.search(index_name: "other")` would silently
+    # query the default cluster while still targeting that index name.
+    #
+    # Models named in index_name: are always considered, so mixing models from
+    # different clusters is caught either way.
+    def source_clusters
+      models = Array(options[:models])
+      models = [klass].compact if models.empty?
+
+      from_index_name = Array(options[:index_name])
+      from_index_name = from_index_name.select { |v| v.respond_to?(:searchkick_options) } if models.any?
+
+      (models + from_index_name).map do |source|
+        name = source.searchkick_options[:cluster] if source.respond_to?(:searchkick_options)
+        Searchkick.canonical_cluster(name)
+      end.uniq
+    end
 
     def handle_error(e)
       status_code = e.message[1..3].to_i

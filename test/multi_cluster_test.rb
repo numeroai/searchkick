@@ -99,6 +99,30 @@ class MultiClusterTest < Minitest::Test
     end
   end
 
+  # a raw index name carries no cluster, so the model must still decide -
+  # otherwise this silently queries that index name on the default cluster
+  def test_raw_index_name_keeps_the_models_cluster
+    assert_equal :secondary, cluster_for(AltProduct.search("*", index_name: "alternate", load: false))
+    # Searchkick.search collapses a single models: entry into klass
+    assert_equal :secondary, cluster_for(Searchkick.search("*", models: [AltProduct], index_name: "alternate", load: false))
+    assert_equal Searchkick::DEFAULT_CLUSTER, cluster_for(Product.search("*", index_name: "alternate", load: false))
+  end
+
+  def test_raw_index_name_without_model_context_is_default
+    assert_equal Searchkick::DEFAULT_CLUSTER, cluster_for(Searchkick.search("*", index_name: "alternate", load: false))
+  end
+
+  def test_explicit_cluster_still_overrides_the_model
+    assert_equal Searchkick::DEFAULT_CLUSTER, cluster_for(AltProduct.search("*", cluster: :default, load: false))
+  end
+
+  # a model/index_name mismatch is caught either way: searchkick's own guard
+  # rejects it when there is a klass, and the cluster check when there is not
+  def test_index_name_naming_a_model_on_another_cluster_raises
+    assert_raises(ArgumentError) { AltProduct.search("*", index_name: [Product], load: false) }
+    assert_raises(Searchkick::Error) { cluster_for(Searchkick.search("*", index_name: [AltProduct, Product], load: false)) }
+  end
+
   def test_explicit_cluster_option
     store_names ["Explicit Cluster"], AltProduct
 
@@ -217,6 +241,60 @@ class MultiClusterTest < Minitest::Test
     secondary_queue&.clear
   end
 
+  # two clusters running async reindexes of the same index name must not share
+  # one batch set - a completion on either would clear the other's outstanding
+  # batch and report done early
+  def test_batches_key_is_cluster_scoped
+    assert_equal(
+      "searchkick:reindex:products_test_123:batches",
+      Searchkick.batches_key("products_test_123")
+    )
+    assert_equal(
+      "searchkick:reindex:products_test_123:batches",
+      Searchkick.batches_key("products_test_123", :default)
+    )
+    assert_equal(
+      "searchkick:reindex:secondary:products_test_123:batches",
+      Searchkick.batches_key("products_test_123", :secondary)
+    )
+  end
+
+  def test_batches_do_not_cross_clusters
+    name = "shared_batch_index"
+    default_index = Searchkick::Index.new(name)
+    secondary_index = Searchkick::Index.new(name, cluster: :secondary)
+    Searchkick.with_redis { |r| r.call("DEL", Searchkick.batches_key(name), Searchkick.batches_key(name, :secondary)) }
+
+    Searchkick.with_redis do |r|
+      r.call("SADD", Searchkick.batches_key(name), [1])
+      r.call("SADD", Searchkick.batches_key(name, :secondary), [1])
+    end
+
+    # completing batch 1 on the default cluster must not clear the secondary's
+    Searchkick::RelationIndexer.new(default_index).batch_completed(1)
+
+    assert_equal 0, default_index.batches_left
+    assert_equal 1, secondary_index.batches_left
+  ensure
+    Searchkick.with_redis { |r| r.call("DEL", Searchkick.batches_key(name), Searchkick.batches_key(name, :secondary)) }
+  end
+
+  # reindex_status has to read the same key the reindex wrote, or wait: true
+  # reports completion for work that never happened and promotes an empty index
+  def test_reindex_status_reads_the_clusters_key
+    name = "status_index"
+    Searchkick.with_redis { |r| r.call("SADD", Searchkick.batches_key(name, :secondary), [1]) }
+
+    assert_equal 0, Searchkick.reindex_status(name)[:batches_left]
+    assert Searchkick.reindex_status(name)[:completed]
+
+    status = Searchkick.reindex_status(name, cluster: :secondary)
+    assert_equal 1, status[:batches_left]
+    refute status[:completed]
+  ensure
+    Searchkick.with_redis { |r| r.call("DEL", Searchkick.batches_key(name, :secondary)) }
+  end
+
   def test_explicit_default_cluster_uses_the_unchanged_key
     assert_equal(
       Searchkick::ReindexQueue.new("products").send(:redis_key),
@@ -273,5 +351,11 @@ class MultiClusterTest < Minitest::Test
 
   def default_model
     AltProduct
+  end
+
+  private
+
+  def cluster_for(relation)
+    relation.send(:query).cluster
   end
 end
