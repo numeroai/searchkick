@@ -218,18 +218,30 @@ class ClusterTest < Minitest::Test
     Searchkick.client_options.delete(:url)
   end
 
-  def test_cluster_url_beats_inherited_hosts
-    Searchkick.client_options[:hosts] = ["global.invalid:9200"]
+  # both transports resolve hosts || host || url, so either inherited key would
+  # outrank the url the cluster names
+  def test_cluster_url_beats_inherited_host_keys
+    [:hosts, :host].each do |key|
+      Searchkick.client_options[key] = key == :hosts ? ["global.invalid:9200"] : "global.invalid:9200"
+      Searchkick.clusters = {archive: {url: "http://archive.invalid:9201"}}
+
+      assert_equal "archive.invalid", client_host(:archive), "inherited #{key.inspect} outranked the cluster url"
+    ensure
+      Searchkick.client_options.delete(key)
+    end
+  end
+
+  def test_cluster_supplying_its_own_host_keys_wins
+    Searchkick.client_options[:host] = "global.invalid:9200"
     Searchkick.clusters = {
-      archive: {url: "http://archive.invalid:9201"},
-      own_hosts: {url: "http://ignored.invalid:9201", client_options: {hosts: ["own.invalid:9300"]}}
+      own_host: {url: "http://ignored.invalid:9201", client_options: {host: "own.invalid:9300"}},
+      own_hosts: {url: "http://ignored.invalid:9201", client_options: {hosts: ["ownh.invalid:9400"]}}
     }
 
-    assert_equal "archive.invalid", client_host(:archive)
-    # a cluster that supplies its own hosts still wins
-    assert_equal "own.invalid", client_host(:own_hosts)
+    assert_equal "own.invalid", client_host(:own_host)
+    assert_equal "ownh.invalid", client_host(:own_hosts)
   ensure
-    Searchkick.client_options.delete(:hosts)
+    Searchkick.client_options.delete(:host)
   end
 
   def test_cluster_timeout_beats_global_transport_options

@@ -62,6 +62,12 @@ module Searchkick
   # the cluster every model uses unless it passes `cluster:`
   DEFAULT_CLUSTER = :default
 
+  # keys both transports resolve ahead of `url` - see the chain in
+  # OpenSearch::Transport::Client and Elastic::Transport::Client:
+  #   hosts || host || url || urls
+  # `urls` sits after `url`, so it cannot outrank a cluster's url.
+  HOST_KEYS_ABOVE_URL = [:hosts, :host].freeze
+
   class << self
     attr_accessor :search_method_name, :models, :redis, :index_prefix, :index_suffix, :queue_name, :model_options, :parent_job
     # readers for these take an optional cluster - see below
@@ -240,9 +246,11 @@ module Searchkick
 
     if config[:url]
       base[:url] = config[:url]
-      # an inherited global `hosts` would defeat the url this cluster names,
-      # since the client prefers hosts when both are present
-      base.delete(:hosts) unless (config[:client_options] || {}).key?(:hosts)
+      # both transports resolve `hosts || host || url`, so an inherited global
+      # hosts/host would defeat the url this cluster names. Anything the cluster
+      # sets itself is left alone.
+      own_keys = (config[:client_options] || {}).keys
+      (HOST_KEYS_ABOVE_URL - own_keys).each { |key| base.delete(key) }
     end
     base.deep_merge!(transport_options: {request: {timeout: config[:timeout]}}) if config[:timeout]
 
