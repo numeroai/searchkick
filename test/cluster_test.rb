@@ -300,12 +300,19 @@ class ClusterTest < Minitest::Test
 
   private
 
+  # OpenSearch nests transport.transport; Elasticsearch exposes it directly.
+  # Same check test_helper makes for the transport logger.
+  def client_transport(cluster)
+    transport = Searchkick.client(cluster).transport
+    transport.respond_to?(:transport) ? transport.transport : transport
+  end
+
   def client_host(cluster)
-    Searchkick.client(cluster).transport.transport.hosts.first[:host]
+    client_transport(cluster).hosts.first[:host]
   end
 
   def client_timeout(cluster)
-    Searchkick.client(cluster).transport.transport
+    client_transport(cluster)
       .instance_variable_get(:@options)[:transport_options][:request][:timeout]
   end
 
