@@ -2,8 +2,8 @@ module Searchkick
   class ProcessBatchJob < Searchkick.parent_job.constantize
     queue_as { Searchkick.queue_name }
 
-    # cluster: pins this job to a cluster. Absent means unpinned - resolve the
-    # model's configured cluster, which is the legacy behavior.
+    # cluster: pins the job to one cluster. Omit it - as most callers should -
+    # and the worker resolves the model's own cluster at execution time.
     def perform(class_name:, record_ids:, index_name: nil, cluster: nil)
       model = Searchkick.load_model(class_name)
       index = model.searchkick_index(name: index_name, cluster: cluster&.to_sym)

@@ -72,8 +72,8 @@ module Searchkick
     private
 
     # Index names are identical across clusters, so named clusters get their own
-    # key or their consumers would RPOP each other's ids. The default key is
-    # unchanged, so in-flight entries stay readable across the deploy.
+    # key or their consumers would RPOP each other's ids. The default keeps the
+    # original form, so single-cluster setups see no change at all.
     def redis_key
       if cluster.nil? || cluster.to_sym == Searchkick::DEFAULT_CLUSTER
         "searchkick:reindex_queue:#{name}"

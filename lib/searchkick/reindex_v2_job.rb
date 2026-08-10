@@ -2,8 +2,8 @@ module Searchkick
   class ReindexV2Job < Searchkick.parent_job.constantize
     queue_as { Searchkick.queue_name }
 
-    # cluster: pins this job to a cluster. Absent means unpinned - resolve the
-    # model's configured cluster, which is the legacy behavior.
+    # cluster: pins the job to one cluster. Omit it - as most callers should -
+    # and the worker resolves the model's own cluster at execution time.
     def perform(class_name, id, method_name = nil, routing: nil, index_name: nil, cluster: nil, ignore_missing: nil, on_missing: nil, full_reindex_method_name: nil)
       on_missing = Searchkick.normalize_on_missing(on_missing, ignore_missing)
       model = Searchkick.load_model(class_name, allow_child: true)
