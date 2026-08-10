@@ -6,9 +6,18 @@ module Searchkick
       @queued_items = {}
     end
 
-    # flat across clusters, so Searchkick.callbacks' any?/size checks are unchanged
+    # flat across clusters, for callers that want the items themselves
     def queued_items
       @queued_items.values.flatten(1)
+    end
+
+    # counted without flattening - Searchkick.callbacks asks on every bulk block
+    def queued_items?
+      @queued_items.any? { |_, items| items.any? }
+    end
+
+    def queued_items_count
+      @queued_items.sum { |_, items| items.size }
     end
 
     # private - for tests
@@ -17,7 +26,10 @@ module Searchkick
     end
 
     def queue(items, cluster: nil)
-      (@queued_items[cluster] ||= []).concat(items)
+      # canonicalized: nil, :default and "default" are one physical cluster, so
+      # they belong in one bulk request - separate buckets would cost an extra
+      # round trip and could reorder operations on the same document
+      (@queued_items[Searchkick.canonical_cluster(cluster)] ||= []).concat(items)
       perform unless Searchkick.callbacks_value == :bulk
     end
 

@@ -1847,6 +1847,11 @@ case installing `Searchkick::Middleware` is up to you).
 `Searchkick.clusters` is assignment-only — assign the whole hash rather than
 mutating it, since assignment is what resets the memoized clients.
 
+Jobs for a model on a named cluster carry a `cluster:` argument that older
+versions of Searchkick cannot deserialize, so **upgrade every job consumer
+before adding `cluster:` to a model**. Jobs for models without the option are
+unaffected and stay readable by both versions.
+
 Most module-level methods take an optional cluster:
 
 ```ruby

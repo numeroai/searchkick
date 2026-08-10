@@ -72,7 +72,7 @@ class MultiClusterTest < Minitest::Test
       buckets = Searchkick.indexer.queued_items_by_cluster.keys
     end
 
-    assert_equal [nil, :secondary], buckets.sort_by(&:to_s)
+    assert_equal %i[default secondary], buckets.sort
 
     Product.searchkick_index.refresh
     AltProduct.searchkick_index.refresh
@@ -149,6 +149,25 @@ class MultiClusterTest < Minitest::Test
   def test_canonicalization_does_not_pin_default_jobs
     assert_nil Product.searchkick_index.cluster
     assert_equal :default, Product.searchkick_index(cluster: :default).cluster
+  end
+
+  # ...but they are one physical cluster, so they share a bulk request
+  def test_default_variants_share_one_bulk_bucket
+    Searchkick.callbacks(:bulk) do
+      Searchkick.indexer.queue([{index: {_id: 1}}])
+      Searchkick.indexer.queue([{index: {_id: 2}}], cluster: :default)
+      Searchkick.indexer.queue([{index: {_id: 3}}], cluster: "default")
+      Searchkick.indexer.queue([{index: {_id: 4}}], cluster: :secondary)
+
+      buckets = Searchkick.indexer.queued_items_by_cluster
+      assert_equal %i[default secondary], buckets.keys.sort
+      assert_equal 3, buckets[:default].size
+      assert_equal 4, Searchkick.indexer.queued_items_count
+      assert Searchkick.indexer.queued_items?
+
+      # drop them rather than sending nonsense documents at teardown
+      buckets.clear
+    end
   end
 
   def test_multi_search_across_clusters_raises

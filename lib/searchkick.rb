@@ -201,26 +201,52 @@ module Searchkick
     require "faraday_middleware/aws_sigv4" if credentials
 
     if resolved_client_type(cluster) == :opensearch
-      OpenSearch::Client.new({
-        url: config[:url] || ENV["OPENSEARCH_URL"],
-        transport_options: {request: {timeout: timeout(cluster)}},
-        retry_on_failure: 2
-      }.deep_merge(client_options(cluster))) do |f|
+      OpenSearch::Client.new(transport_config(cluster, ENV["OPENSEARCH_URL"])) do |f|
         f.use Searchkick::Middleware, {cluster: cluster}
         f.request :aws_sigv4, signer_middleware_aws_params(credentials) if credentials
       end
     else
       raise Error, "The `elasticsearch` gem must be 8+" if Elasticsearch::VERSION.to_i < 8
 
-      Elasticsearch::Client.new({
-        url: config[:url] || ENV["ELASTICSEARCH_URL"],
-        transport_options: {request: {timeout: timeout(cluster)}},
-        retry_on_failure: 2
-      }.deep_merge(client_options(cluster))) do |f|
+      Elasticsearch::Client.new(transport_config(cluster, ENV["ELASTICSEARCH_URL"])) do |f|
         f.use Searchkick::Middleware, {cluster: cluster}
         f.request :aws_sigv4, signer_middleware_aws_params(credentials) if credentials
       end
     end
+  end
+
+  # private
+  #
+  # Layered so that the more specific setting wins:
+  #
+  #   built-in defaults
+  #     -> global client_options
+  #     -> the cluster's own url / timeout
+  #     -> the cluster's own client_options
+  #
+  # For the default cluster there is no cluster layer, so this collapses to
+  # today's `{url:, transport_options:, retry_on_failure:}.deep_merge(client_options)`.
+  # For a named cluster the ordering matters: a global `client_options[:url]`,
+  # `[:hosts]`, or transport timeout must not silently outrank the url and
+  # timeout that cluster was registered with.
+  def self.transport_config(cluster, env_url)
+    config = cluster_config(cluster)
+
+    base = {
+      url: env_url,
+      transport_options: {request: {timeout: @timeout}},
+      retry_on_failure: 2
+    }.deep_merge(@client_options)
+
+    if config[:url]
+      base[:url] = config[:url]
+      # an inherited global `hosts` would defeat the url this cluster names,
+      # since the client prefers hosts when both are present
+      base.delete(:hosts) unless (config[:client_options] || {}).key?(:hosts)
+    end
+    base.deep_merge!(transport_options: {request: {timeout: config[:timeout]}}) if config[:timeout]
+
+    base.deep_merge(config[:client_options] || {})
   end
 
   def self.env
@@ -334,13 +360,13 @@ module Searchkick
       begin
         self.callbacks_value = value
         result = yield
-        if callbacks_value == :bulk && indexer.queued_items.any?
+        if callbacks_value == :bulk && indexer.queued_items?
           event = {}
           if message
             message.call(event)
           else
             event[:name] = "Bulk"
-            event[:count] = indexer.queued_items.size
+            event[:count] = indexer.queued_items_count
           end
           ActiveSupport::Notifications.instrument("request.searchkick", event) do
             indexer.perform

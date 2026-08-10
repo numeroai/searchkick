@@ -206,6 +206,71 @@ class ClusterTest < Minitest::Test
     assert Searchkick.client.info
   end
 
+  # Option layering: the more specific setting wins. Global client_options must
+  # not outrank a url or timeout the cluster was registered with, or a named
+  # client silently talks to the default server.
+  def test_cluster_url_beats_global_client_options
+    Searchkick.client_options[:url] = "http://global.invalid:9200"
+    Searchkick.clusters = {archive: {url: "http://archive.invalid:9201"}}
+
+    assert_equal "archive.invalid", client_host(:archive)
+  ensure
+    Searchkick.client_options.delete(:url)
+  end
+
+  def test_cluster_url_beats_inherited_hosts
+    Searchkick.client_options[:hosts] = ["global.invalid:9200"]
+    Searchkick.clusters = {
+      archive: {url: "http://archive.invalid:9201"},
+      own_hosts: {url: "http://ignored.invalid:9201", client_options: {hosts: ["own.invalid:9300"]}}
+    }
+
+    assert_equal "archive.invalid", client_host(:archive)
+    # a cluster that supplies its own hosts still wins
+    assert_equal "own.invalid", client_host(:own_hosts)
+  ensure
+    Searchkick.client_options.delete(:hosts)
+  end
+
+  def test_cluster_timeout_beats_global_transport_options
+    Searchkick.client_options[:transport_options] = {request: {timeout: 99}}
+    Searchkick.clusters = {slow: {timeout: 30}, inherits: {}}
+
+    assert_equal 30, client_timeout(:slow)
+    # a cluster that sets no timeout still inherits the global one
+    assert_equal 99, client_timeout(:inherits)
+  ensure
+    Searchkick.client_options.delete(:transport_options)
+  end
+
+  # CI runs both logical clusters against one server, so index isolation cannot
+  # prove which client a call went through. An injected client can.
+  def test_operations_go_through_the_clusters_own_client
+    recorder = Class.new do
+      attr_reader :calls
+      def initialize = @calls = []
+      # returns self so chains like client.indices.exists(...) record both hops
+      def method_missing(name, *_args, **_kwargs) = (@calls << name) && self
+      def respond_to_missing?(*) = true
+    end.new
+
+    Searchkick.clusters = {recorded: {client: recorder}}
+    index = Searchkick::Index.new("some_index", cluster: :recorded)
+
+    index.exists?
+    index.refresh
+    index.delete
+
+    # the operations reached this client, not the default one - the exact call
+    # chain is searchkick's business, so assert on what was routed, not its shape
+    assert_includes recorder.calls, :exists
+    assert_includes recorder.calls, :refresh
+    assert_includes recorder.calls, :delete
+    assert Searchkick.client(:recorded).equal?(recorder)
+    # and nothing leaked onto the default client
+    refute Searchkick.client.equal?(recorder)
+  end
+
   # middleware resolves timeouts against its own cluster
   def test_middleware_uses_cluster_timeout
     Searchkick.clusters = {slow: {timeout: 30, search_timeout: 7}}
@@ -222,6 +287,15 @@ class ClusterTest < Minitest::Test
   end
 
   private
+
+  def client_host(cluster)
+    Searchkick.client(cluster).transport.transport.hosts.first[:host]
+  end
+
+  def client_timeout(cluster)
+    Searchkick.client(cluster).transport.transport
+      .instance_variable_get(:@options)[:transport_options][:request][:timeout]
+  end
 
   def middleware_timeout(cluster, path, body = nil)
     env = {url: URI("http://localhost:9200#{path}"), request: {}, request_body: body}
