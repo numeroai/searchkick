@@ -5,9 +5,8 @@ module Searchkick
     # cluster: pins the job to one cluster. Omit it - as most callers should -
     # and the worker resolves the model's own cluster at execution time.
     def perform(class_name:, index_name: nil, cluster: nil, inline: false, job_options: nil)
-      pinned_cluster = cluster&.to_sym
       model = Searchkick.load_model(class_name)
-      index = model.searchkick_index(name: index_name, cluster: pinned_cluster)
+      index = model.searchkick_index(name: index_name, cluster: cluster&.to_sym)
       limit = model.searchkick_options[:batch_size] || 1000
       job_options = (model.searchkick_options[:job_options] || {}).merge(job_options || {})
 
