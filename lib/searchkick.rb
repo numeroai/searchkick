@@ -59,10 +59,20 @@ module Searchkick
 
   ON_MISSING_VALUES = [:raise, :ignore, :full].freeze
 
+  # the cluster every model uses unless it passes `cluster:`
+  DEFAULT_CLUSTER = :default
+
+  # keys both transports resolve ahead of `url` - see the chain in
+  # OpenSearch::Transport::Client and Elastic::Transport::Client:
+  #   hosts || host || url || urls
+  # `urls` sits after `url`, so it cannot outrank a cluster's url.
+  HOST_KEYS_ABOVE_URL = [:hosts, :host].freeze
+
   class << self
-    attr_accessor :search_method_name, :timeout, :models, :client_options, :redis, :index_prefix, :index_suffix, :queue_name, :model_options, :client_type, :parent_job
-    attr_writer :client, :env, :search_timeout
-    attr_reader :aws_credentials
+    attr_accessor :search_method_name, :models, :redis, :index_prefix, :index_suffix, :queue_name, :model_options, :parent_job
+    # readers for these take an optional cluster - see below
+    attr_writer :env, :search_timeout, :timeout, :client_options, :client_type
+    attr_reader :clusters
   end
   self.search_method_name = :search
   self.timeout = 10
@@ -71,80 +81,216 @@ module Searchkick
   self.queue_name = :searchkick
   self.model_options = {}
   self.parent_job = "ActiveJob::Base"
+  @clusters = {}.freeze
+  @clients = {}
+  @server_info = {}
 
-  def self.client
-    @client ||= begin
-      client_type =
-        if self.client_type
-          self.client_type
-        elsif defined?(OpenSearch::Client) && defined?(Elasticsearch::Client)
-          raise Error, "Multiple clients found - set Searchkick.client_type = :elasticsearch or :opensearch"
-        elsif defined?(OpenSearch::Client)
-          :opensearch
-        elsif defined?(Elasticsearch::Client)
-          :elasticsearch
-        else
-          raise Error, "No client found - install the `elasticsearch` or `opensearch-ruby` gem"
-        end
+  # Named clusters, keyed by symbol:
+  #
+  #   Searchkick.clusters = {archive: {url: "https://...", timeout: 30}}
+  #
+  # Assignment-only and frozen: mutating the returned hash would bypass
+  # normalization and leave the memoized clients stale.
+  def self.clusters=(value)
+    value = (value || {}).to_h { |name, config| [name.to_sym, freeze_config(config.to_h)] }
 
-      if client_type == :opensearch
-        OpenSearch::Client.new({
-          url: ENV["OPENSEARCH_URL"],
-          transport_options: {request: {timeout: timeout}},
-          retry_on_failure: 2
-        }.deep_merge(client_options)) do |f|
-          f.use Searchkick::Middleware
-          f.request :aws_sigv4, signer_middleware_aws_params if aws_credentials
-        end
-      else
-        raise Error, "The `elasticsearch` gem must be 8+" if Elasticsearch::VERSION.to_i < 8
+    if value.key?(DEFAULT_CLUSTER)
+      raise Error, "Configure the default cluster with Searchkick.timeout, Searchkick.client_options, etc., not Searchkick.clusters[#{DEFAULT_CLUSTER.inspect}]"
+    end
 
-        Elasticsearch::Client.new({
-          url: ENV["ELASTICSEARCH_URL"],
-          transport_options: {request: {timeout: timeout}},
-          retry_on_failure: 2
-        }.deep_merge(client_options)) do |f|
-          f.use Searchkick::Middleware
-          f.request :aws_sigv4, signer_middleware_aws_params if aws_credentials
-        end
+    @clusters = value.freeze
+    reset_clusters
+  end
+
+  # private
+  # Drops memoized clients for named clusters, whose config just changed.
+  #
+  # The default cluster is left alone: cluster_config returns {} for it, so
+  # nothing in the registry can affect how its client is built - and it may hold
+  # a client installed through Searchkick.client=, which resetting would
+  # silently replace with a freshly built one.
+  def self.reset_clusters
+    @clients = (@clients || {}).slice(DEFAULT_CLUSTER)
+    @server_info = (@server_info || {}).slice(DEFAULT_CLUSTER)
+  end
+
+  # private
+  # Copy and freeze the config's containers so the registry cannot be mutated
+  # after assignment, without freezing the hash the caller still holds.
+  #
+  # Leaf values are carried by reference, never duplicated: a client passed via
+  # `client:` must stay the caller's own object, or stubs and identity checks
+  # against it would not apply to the client Searchkick actually uses.
+  def self.freeze_config(value)
+    case value
+    when Hash
+      value.to_h { |k, v| [k, freeze_config(v)] }.freeze
+    when Array
+      value.map { |v| freeze_config(v) }.freeze
+    else
+      value
+    end
+  end
+
+  # private
+  # nil, :default, and "default" all name the same physical cluster. Use this
+  # anywhere cluster identity is compared or memoized - but not for job
+  # serialization, where nil (unpinned) and :default (pinned) differ.
+  def self.canonical_cluster(cluster)
+    cluster&.to_sym || DEFAULT_CLUSTER
+  end
+
+  # private
+  def self.cluster_config(cluster)
+    return {} if cluster.nil? || cluster.to_sym == DEFAULT_CLUSTER
+
+    clusters.fetch(cluster.to_sym) do
+      raise Error, "Unknown cluster: #{cluster.inspect} (known: #{clusters.keys.map(&:inspect).join(", ")})"
+    end
+  end
+
+  def self.timeout(cluster = nil)
+    cluster_config(cluster)[:timeout] || @timeout
+  end
+
+  def self.client_options(cluster = nil)
+    extra = cluster_config(cluster)[:client_options]
+    # return the same object when there is no override - client_options is
+    # documented as mutable in place (README: Searchkick.client_options[:x] = y)
+    extra ? @client_options.deep_merge(extra) : @client_options
+  end
+
+  # nil unless explicitly configured, same as before - the engine sniff lives
+  # in resolved_client_type
+  def self.client_type(cluster = nil)
+    cluster_config(cluster)[:client_type] || @client_type
+  end
+
+  def self.aws_credentials(cluster = nil)
+    config = cluster_config(cluster)
+    # key? so a cluster can pass `aws_credentials: nil` to opt out of the global
+    config.key?(:aws_credentials) ? config[:aws_credentials] : @aws_credentials
+  end
+
+  def self.client(cluster = nil)
+    (@clients ||= {})[canonical_cluster(cluster)] ||= build_client(cluster)
+  end
+
+  def self.client=(value)
+    (@clients ||= {})[DEFAULT_CLUSTER] = value
+  end
+
+  # private
+  def self.resolved_client_type(cluster = nil)
+    type = client_type(cluster)
+    return type if type
+
+    if defined?(OpenSearch::Client) && defined?(Elasticsearch::Client)
+      raise Error, "Multiple clients found - set Searchkick.client_type = :elasticsearch or :opensearch"
+    elsif defined?(OpenSearch::Client)
+      :opensearch
+    elsif defined?(Elasticsearch::Client)
+      :elasticsearch
+    else
+      raise Error, "No client found - install the `elasticsearch` or `opensearch-ruby` gem"
+    end
+  end
+
+  # private
+  def self.build_client(cluster = nil)
+    config = cluster_config(cluster)
+    return config[:client] if config[:client]
+
+    credentials = aws_credentials(cluster)
+    # the global writer requires this, but a cluster can carry its own credentials
+    # without the writer ever being called
+    require "faraday_middleware/aws_sigv4" if credentials
+
+    if resolved_client_type(cluster) == :opensearch
+      OpenSearch::Client.new(transport_config(cluster, ENV["OPENSEARCH_URL"])) do |f|
+        f.use Searchkick::Middleware, {cluster: cluster}
+        f.request :aws_sigv4, signer_middleware_aws_params(credentials) if credentials
+      end
+    else
+      raise Error, "The `elasticsearch` gem must be 8+" if Elasticsearch::VERSION.to_i < 8
+
+      Elasticsearch::Client.new(transport_config(cluster, ENV["ELASTICSEARCH_URL"])) do |f|
+        f.use Searchkick::Middleware, {cluster: cluster}
+        f.request :aws_sigv4, signer_middleware_aws_params(credentials) if credentials
       end
     end
+  end
+
+  # private
+  #
+  # Layered so that the more specific setting wins:
+  #
+  #   built-in defaults
+  #     -> global client_options
+  #     -> the cluster's own url / timeout
+  #     -> the cluster's own client_options
+  #
+  # For the default cluster there is no cluster layer, so this collapses to
+  # today's `{url:, transport_options:, retry_on_failure:}.deep_merge(client_options)`.
+  # For a named cluster the ordering matters: a global `client_options[:url]`,
+  # `[:hosts]`, or transport timeout must not silently outrank the url and
+  # timeout that cluster was registered with.
+  def self.transport_config(cluster, env_url)
+    config = cluster_config(cluster)
+
+    base = {
+      url: env_url,
+      transport_options: {request: {timeout: @timeout}},
+      retry_on_failure: 2
+    }.deep_merge(@client_options)
+
+    if config[:url]
+      base[:url] = config[:url]
+      # both transports resolve `hosts || host || url`, so an inherited global
+      # hosts/host would defeat the url this cluster names. Anything the cluster
+      # sets itself is left alone.
+      own_keys = (config[:client_options] || {}).keys
+      (HOST_KEYS_ABOVE_URL - own_keys).each { |key| base.delete(key) }
+    end
+    base.deep_merge!(transport_options: {request: {timeout: config[:timeout]}}) if config[:timeout]
+
+    base.deep_merge(config[:client_options] || {})
   end
 
   def self.env
     @env ||= ENV["RAILS_ENV"] || ENV["RACK_ENV"] || "development"
   end
 
-  def self.search_timeout
-    (defined?(@search_timeout) && @search_timeout) || timeout
+  def self.search_timeout(cluster = nil)
+    cluster_config(cluster)[:search_timeout] ||
+      (defined?(@search_timeout) && @search_timeout) ||
+      timeout(cluster)
   end
 
   # private
-  def self.server_info
-    @server_info ||= client.info
+  def self.server_info(cluster = nil)
+    (@server_info ||= {})[canonical_cluster(cluster)] ||= client(cluster).info
   end
 
-  def self.server_version
-    @server_version ||= server_info["version"]["number"]
+  # memoized through server_info, so these stay plain lookups
+  def self.server_version(cluster = nil)
+    server_info(cluster)["version"]["number"]
   end
 
-  def self.opensearch?
-    unless defined?(@opensearch)
-      @opensearch = server_info["version"]["distribution"] == "opensearch"
-    end
-    @opensearch
+  def self.opensearch?(cluster = nil)
+    server_info(cluster)["version"]["distribution"] == "opensearch"
   end
 
-  def self.server_below?(version)
-    Gem::Version.new(server_version.split("-")[0]) < Gem::Version.new(version.split("-")[0])
+  def self.server_below?(version, cluster = nil)
+    Gem::Version.new(server_version(cluster).split("-")[0]) < Gem::Version.new(version.split("-")[0])
   end
 
   # private
-  def self.knn_support?
-    if opensearch?
-      !server_below?("2.4.0")
+  def self.knn_support?(cluster = nil)
+    if opensearch?(cluster)
+      !server_below?("2.4.0", cluster)
     else
-      !server_below?("8.6.0")
+      !server_below?("8.6.0", cluster)
     end
   end
 
@@ -222,13 +368,13 @@ module Searchkick
       begin
         self.callbacks_value = value
         result = yield
-        if callbacks_value == :bulk && indexer.queued_items.any?
+        if callbacks_value == :bulk && indexer.queued_items?
           event = {}
           if message
             message.call(event)
           else
             event[:name] = "Bulk"
-            event[:count] = indexer.queued_items.size
+            event[:count] = indexer.queued_items_count
           end
           ActiveSupport::Notifications.instrument("request.searchkick", event) do
             indexer.perform
@@ -247,13 +393,28 @@ module Searchkick
     require "faraday_middleware/aws_sigv4"
 
     @aws_credentials = creds
-    @client = nil # reset client
+    @clients = {} # reset clients - named clusters may inherit these credentials
   end
 
-  def self.reindex_status(index_name)
+  # private
+  # keyed by cluster for named clusters only, so the default key - and any
+  # in-flight batch state under it - is untouched
+  def self.batches_key(index_name, cluster = nil)
+    if canonical_cluster(cluster) == DEFAULT_CLUSTER
+      "searchkick:reindex:#{index_name}:batches"
+    else
+      "searchkick:reindex:#{cluster}:#{index_name}:batches"
+    end
+  end
+
+  # cluster: must match the one the reindex ran against, or this reads a
+  # different key and reports completion for work that never happened
+  def self.reindex_status(index_name, cluster: nil)
     raise Error, "Redis not configured" unless redis
 
-    batches_left = Index.new(index_name).batches_left
+    # redis-only (SCARD on the batches key), so this Index never resolves a
+    # client - but it does need the cluster to build the right key
+    batches_left = Index.new(index_name, cluster: cluster).batches_left
     {
       completed: batches_left == 0,
       batches_left: batches_left
@@ -352,8 +513,8 @@ module Searchkick
   end
 
   # private
-  def self.signer_middleware_aws_params
-    {service: "es", region: "us-east-1"}.merge(aws_credentials)
+  def self.signer_middleware_aws_params(credentials = aws_credentials)
+    {service: "es", region: "us-east-1"}.merge(credentials)
   end
 
   # private

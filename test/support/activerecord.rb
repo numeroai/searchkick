@@ -35,6 +35,10 @@ ActiveRecord::Schema.define do
     t.timestamps null: true
   end
 
+  create_table :alt_products do |t|
+    t.string :name
+  end
+
   create_table :stores do |t|
     t.string :name
   end
@@ -92,6 +96,9 @@ class Store < ActiveRecord::Base
 end
 
 class Contact < ActiveRecord::Base
+end
+
+class AltProduct < ActiveRecord::Base
 end
 
 class Region < ActiveRecord::Base

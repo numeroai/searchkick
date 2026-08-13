@@ -170,6 +170,8 @@ module Searchkick
       job_options ||= {}
       # TODO expire Redis key
       Searchkick.with_redis { |r| r.call("SADD", batches_key, [batch_id]) }
+      # pin only for a named cluster, so default work keeps the same job payload
+      options[:cluster] = index.cluster.to_s if index.cluster
       Searchkick::BulkReindexJob.set(**job_options).perform_later(
         class_name: class_name,
         index_name: index.name,
@@ -178,8 +180,12 @@ module Searchkick
       )
     end
 
+    # Namespaced for named clusters: index names are identical across clusters,
+    # so two concurrent async reindexes would otherwise share one batch set and
+    # each SREM could clear the other's outstanding batch - reporting completion
+    # early and promoting a half-populated index. The default key is unchanged.
     def batches_key
-      "searchkick:reindex:#{index.name}:batches"
+      Searchkick.batches_key(index.name, index.cluster)
     end
   end
 end

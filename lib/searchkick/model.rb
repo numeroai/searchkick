@@ -11,7 +11,7 @@ module Searchkick
         options[:conversions] = options.delete(:conversions_v1)
       end
 
-      unknown_keywords = options.keys - [:_all, :_type, :batch_size, :callbacks, :callback_options, :case_sensitive, :conversions, :conversions_v2, :deep_paging, :default_fields,
+      unknown_keywords = options.keys - [:_all, :_type, :batch_size, :callbacks, :callback_options, :case_sensitive, :cluster, :conversions, :conversions_v2, :deep_paging, :default_fields,
         :filterable, :geo_shape, :highlight, :ignore_above, :index_name, :index_prefix, :inheritance, :job_options, :knn, :language,
         :locations, :mappings, :match, :max_result_window, :merge_mappings, :routing, :searchable, :search_synonyms, :settings, :similarity,
         :special_characters, :stem, :stemmer, :stem_conversions, :stem_exclusion, :stemmer_override, :suggest, :synonyms, :text_end,
@@ -75,11 +75,16 @@ module Searchkick
           end
           alias_method Searchkick.search_method_name, :searchkick_search if Searchkick.search_method_name
 
-          def searchkick_index(name: nil)
+          # cluster: overrides the model's configured cluster, for operating on
+          # the same index on another cluster (migrations, parity checks)
+          def searchkick_index(name: nil, cluster: nil)
             index_name = name || searchkick_klass.searchkick_index_name
             index_name = index_name.call if index_name.respond_to?(:call)
+            options = searchkick_options
+            options = options.merge(cluster: cluster) if cluster
             index_cache = class_variable_get(:@@searchkick_index_cache)
-            index_cache.fetch(index_name) { Searchkick::Index.new(index_name, searchkick_options) }
+            # key on cluster too, or an override would collide with the default index
+            index_cache.fetch([index_name, options[:cluster]]) { Searchkick::Index.new(index_name, options) }
           end
           alias_method :search_index, :searchkick_index unless method_defined?(:search_index)
 

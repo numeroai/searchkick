@@ -1,5 +1,10 @@
 ## Unreleased
 
+- Added multi-cluster support: register named clusters with `Searchkick.clusters` and route a model to one with `searchkick cluster: :name`. Models without a `cluster:` option are unaffected, and registering a cluster no model names is inert. `client`, `timeout`, `search_timeout`, `client_options`, `client_type`, `aws_credentials`, `server_info`, `server_version`, `opensearch?`, `server_below?`, and `knn_support?` all take an optional cluster. `Index#client` is now public. Searching or multi-searching across clusters raises — a request targets one cluster.
+- Background jobs accept `cluster:` to pin work to a cluster. It is serialized only when pinned or non-default, so jobs for default-cluster models keep their existing payload and stay consumable by workers running an older version during a rolling deploy. Upgrade every job consumer before adding `cluster:` to a model.
+- Reindex queue and batch keys are namespaced by cluster for named clusters (`searchkick:reindex_queue:<cluster>:<index>`, `searchkick:reindex:<cluster>:<index>:batches`). The default cluster's keys are unchanged, so in-flight state survives the upgrade. `Searchkick.reindex_status` takes an optional `cluster:` to read the matching key.
+- Fixed `clean_indices` deleting against the default cluster instead of the index's own — it dropped the index options when building the indices it deletes. This runs inside every full reindex.
+- Fixed `full_reindex` generating mappings from the model's configured cluster rather than the one being written, which mattered when reindexing through a `searchkick_index(cluster:)` override.
 - Added `:queue` mode support for partial reindexing (`Model.reindex(:method_name, mode: :queue)`, including `on_missing` and `full_reindex_method_name`). Note: queue entries now use a binary-sentinel framing in addition to the legacy `id|routing` format — workers must be upgraded before publishers to avoid stale workers misinterpreting new entries.
 
 ## 6.1.2 (2026-06-04)

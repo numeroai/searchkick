@@ -1608,6 +1608,9 @@ And use:
 
 ```ruby
 Searchkick.reindex_status(index_name)
+
+# for a model on a named cluster, pass the cluster the reindex ran against
+Searchkick.reindex_status(index_name, cluster: :archive)
 ```
 
 You can also have Searchkick wait for reindexing to complete
@@ -1810,6 +1813,67 @@ To access the `Elasticsearch::Client` or `OpenSearch::Client` directly, use:
 ```ruby
 Searchkick.client
 ```
+
+### Multiple Clusters
+
+To put an index on its own cluster — to isolate a heavy index from your
+interactive ones, for instance — register the cluster, then name it on the model:
+
+```ruby
+# config/initializers/searchkick.rb
+Searchkick.clusters = {
+  archive: {url: ENV["ARCHIVE_OPENSEARCH_URL"]}
+}
+```
+
+```ruby
+class Event < ApplicationRecord
+  searchkick cluster: :archive
+end
+```
+
+Everything that model does — queries, indexing, admin operations, background
+jobs, queue mode, scrolling, mappings, and version detection — routes to that
+cluster. Models without a `cluster:` option are unaffected, and registering a
+cluster that no model names does nothing.
+
+A cluster entry may set `url`, `timeout`, `search_timeout`, `client_options`,
+`client_type`, and `aws_credentials`. Anything it omits falls back to the
+corresponding global setting, so a cluster that only needs a different URL is
+one line. Pass `aws_credentials: nil` to opt a cluster out of globally
+configured credentials, or `client:` to supply a fully built client (in which
+case installing `Searchkick::Middleware` is up to you).
+
+`Searchkick.clusters` is assignment-only — assign the whole hash rather than
+mutating it, since assignment is what resets the memoized clients.
+
+Jobs for a model on a named cluster carry a `cluster:` argument that older
+versions of Searchkick cannot deserialize, so **upgrade every job consumer
+before adding `cluster:` to a model**. Jobs for models without the option are
+unaffected and stay readable by both versions.
+
+Most module-level methods take an optional cluster:
+
+```ruby
+Searchkick.client(:archive)
+Searchkick.server_version(:archive)
+Searchkick.opensearch?(:archive)
+```
+
+To operate on the same index on another cluster — during a migration, say — pass
+`cluster:` when resolving the index:
+
+```ruby
+Event.searchkick_index(cluster: :archive)
+```
+
+A single search request goes to exactly one cluster, so searching models that
+live on different clusters raises. Run one search per cluster instead. The same
+applies to `Searchkick.multi_search`.
+
+Index names are unchanged by clustering, so two clusters can hold indices of the
+same name. Reindex queue and batch keys in Redis are namespaced by cluster, so
+concurrent reindexes on different clusters do not interfere.
 
 ## Multi Search
 
