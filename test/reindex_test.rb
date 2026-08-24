@@ -287,9 +287,14 @@ class ReindexTest < Minitest::Test
     previous_batch_size = Product.searchkick_options[:batch_size]
     Product.searchkick_options[:batch_size] = 2
 
-    reindex = nil
+    reindexes = []
+    assert_enqueued_jobs(6) do
+      reindexes << Product.reindex(mode: :async)
+    end
+    clear_enqueued_jobs
+
     assert_enqueued_jobs(2) do
-      reindex = Product.reindex(mode: :async)
+      reindexes << Product.reindex(mode: :async, batch_by: :records)
     end
 
     ranges = enqueued_jobs.last(2).map do |job|
@@ -305,10 +310,23 @@ class ReindexTest < Minitest::Test
     else
       Product.searchkick_options.delete(:batch_size)
     end
-    if reindex
+    reindexes&.each do |reindex|
       Searchkick.with_redis { |r| r.call("DEL", Searchkick.batches_key(reindex[:index_name])) }
-      Searchkick::Index.new(reindex[:index_name]).delete
+      index = Searchkick::Index.new(reindex[:index_name])
+      index.delete if index.exists?
     end
+  end
+
+  def test_full_async_batch_by_validation
+    error = assert_raises(ArgumentError) do
+      Product.reindex(mode: :async, batch_by: :invalid)
+    end
+    assert_equal "Invalid value for batch_by: :invalid (expected :id or :records)", error.message
+
+    error = assert_raises(ArgumentError) do
+      Product.reindex(batch_by: :records)
+    end
+    assert_equal "batch_by only available in :async mode", error.message
   end
 
   def test_full_async_non_integer_pk

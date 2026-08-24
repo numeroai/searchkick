@@ -6,7 +6,7 @@ module Searchkick
       @index = index
     end
 
-    def reindex(relation, mode:, method_name: nil, on_missing: nil, full: false, resume: false, scope: nil, full_reindex_method_name: nil, job_options: nil)
+    def reindex(relation, mode:, method_name: nil, on_missing: nil, full: false, resume: false, scope: nil, full_reindex_method_name: nil, job_options: nil, batch_by: nil)
       # apply scopes
       if scope
         relation = relation.send(scope)
@@ -29,7 +29,7 @@ module Searchkick
       end
 
       if mode == :async && full
-        return full_reindex_async(relation, full_reindex_method_name: full_reindex_method_name, job_options: job_options)
+        return full_reindex_async(relation, full_reindex_method_name: full_reindex_method_name, job_options: job_options, batch_by: batch_by)
       end
 
       relation = resume_relation(relation) if resume
@@ -131,7 +131,7 @@ module Searchkick
       @batch_size ||= index.options[:batch_size] || 1000
     end
 
-    def full_reindex_async(relation, full_reindex_method_name: nil, job_options: nil)
+    def full_reindex_async(relation, full_reindex_method_name: nil, job_options: nil, batch_by: nil)
       batch_id = 1
       class_name = relation.searchkick_options[:class_name]
       starting_id = false
@@ -149,7 +149,7 @@ module Searchkick
 
       if starting_id.nil?
         # no records, do nothing
-      elsif starting_id.is_a?(Numeric)
+      elsif starting_id.is_a?(Numeric) && batch_by == :records
         loop do
           # Find the id of the batch_size-th record rather than adding batch_size
           # to the id. This keeps sparse primary keys from creating empty jobs,
@@ -170,6 +170,15 @@ module Searchkick
 
           batch_id += 1
           starting_id = max_id + 1
+        end
+      elsif starting_id.is_a?(Numeric)
+        max_id = relation.maximum(primary_key)
+        batches_count = ((max_id - starting_id + 1) / batch_size.to_f).ceil
+
+        batches_count.times do |i|
+          min_id = starting_id + (i * batch_size)
+          batch_job(class_name, batch_id, job_options, min_id: min_id, max_id: min_id + batch_size - 1, full_reindex_method_name: full_reindex_method_name ? full_reindex_method_name.to_s : nil)
+          batch_id += 1
         end
       else
         in_batches(relation) do |items|

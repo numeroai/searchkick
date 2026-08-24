@@ -382,9 +382,13 @@ module Searchkick
 
     # https://gist.github.com/jarosan/3124884
     # https://www.elastic.co/blog/changing-mapping-with-zero-downtime/
-    def full_reindex(relation, import: true, resume: false, retain: false, mode: nil, refresh_interval: nil, scope: nil, wait: nil, full_reindex_method_name: nil, job_options: nil)
+    def full_reindex(relation, import: true, resume: false, retain: false, mode: nil, refresh_interval: nil, scope: nil, wait: nil, full_reindex_method_name: nil, job_options: nil, batch_by: nil)
       raise ArgumentError, "wait only available in :async mode" if !wait.nil? && mode != :async
       raise ArgumentError, "Full reindex does not support :queue mode - use :async mode instead" if mode == :queue
+      unless [nil, :id, :records].include?(batch_by)
+        raise ArgumentError, "Invalid value for batch_by: #{batch_by.inspect} (expected :id or :records)"
+      end
+      raise ArgumentError, "batch_by only available in :async mode" if batch_by && mode != :async
 
       if resume
         index_name = all_indices.sort.last
@@ -410,6 +414,7 @@ module Searchkick
         full_reindex_method_name: full_reindex_method_name,
         job_options: job_options
       }
+      import_options[:batch_by] = batch_by if batch_by
 
       uuid = index.uuid
 
