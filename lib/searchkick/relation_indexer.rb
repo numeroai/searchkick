@@ -150,13 +150,26 @@ module Searchkick
       if starting_id.nil?
         # no records, do nothing
       elsif starting_id.is_a?(Numeric)
-        max_id = relation.maximum(primary_key)
-        batches_count = ((max_id - starting_id + 1) / batch_size.to_f).ceil
+        loop do
+          # Find the id of the batch_size-th record rather than adding batch_size
+          # to the id. This keeps sparse primary keys from creating empty jobs,
+          # without loading every id or using an increasingly large offset.
+          max_id = relation
+            .where(relation.arel_table[primary_key].gteq(starting_id))
+            .except(:order)
+            .order(primary_key => :asc)
+            .offset(batch_size - 1)
+            .pick(primary_key)
+          last_batch = max_id.nil?
+          max_id ||= relation.maximum(primary_key)
 
-        batches_count.times do |i|
-          min_id = starting_id + (i * batch_size)
-          batch_job(class_name, batch_id, job_options, min_id: min_id, max_id: min_id + batch_size - 1, full_reindex_method_name: full_reindex_method_name ? full_reindex_method_name.to_s : nil)
+          break if max_id.nil? || max_id < starting_id
+
+          batch_job(class_name, batch_id, job_options, min_id: starting_id, max_id: max_id, full_reindex_method_name: full_reindex_method_name ? full_reindex_method_name.to_s : nil)
+          break if last_batch
+
           batch_id += 1
+          starting_id = max_id + 1
         end
       else
         in_batches(relation) do |items|

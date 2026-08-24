@@ -276,6 +276,41 @@ class ReindexTest < Minitest::Test
     end
   end
 
+  def test_full_async_batches_sparse_integer_ids_by_record_count
+    Searchkick.callbacks(false) do
+      Product.create!(id: 1, name: "Product A")
+      Product.create!(id: 10, name: "Product B")
+      Product.create!(id: 11, name: "Product C")
+    end
+
+    had_batch_size = Product.searchkick_options.key?(:batch_size)
+    previous_batch_size = Product.searchkick_options[:batch_size]
+    Product.searchkick_options[:batch_size] = 2
+
+    reindex = nil
+    assert_enqueued_jobs(2) do
+      reindex = Product.reindex(mode: :async)
+    end
+
+    ranges = enqueued_jobs.last(2).map do |job|
+      job["arguments"].first.slice("min_id", "max_id")
+    end
+    assert_equal [
+      {"min_id" => 1, "max_id" => 10},
+      {"min_id" => 11, "max_id" => 11}
+    ], ranges
+  ensure
+    if had_batch_size
+      Product.searchkick_options[:batch_size] = previous_batch_size
+    else
+      Product.searchkick_options.delete(:batch_size)
+    end
+    if reindex
+      Searchkick.with_redis { |r| r.call("DEL", Searchkick.batches_key(reindex[:index_name])) }
+      Searchkick::Index.new(reindex[:index_name]).delete
+    end
+  end
+
   def test_full_async_non_integer_pk
     Sku.create(id: SecureRandom.hex, name: "Test")
 
