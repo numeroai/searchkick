@@ -1592,6 +1592,16 @@ Product.reindex(mode: :async)
 # {index_name: "products_production_20260111210018065"}
 ```
 
+For integer primary keys, jobs are split by ID range. If the primary key has
+large gaps, split jobs by the number of records instead:
+
+```ruby
+Product.reindex(mode: :async, batch_by_records: true)
+```
+
+This performs one additional database query per batch while jobs are enqueued,
+but avoids creating empty jobs for gaps in the primary key.
+
 Once the jobs complete, promote the new index with:
 
 ```ruby

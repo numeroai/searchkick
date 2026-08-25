@@ -6,7 +6,7 @@ module Searchkick
       @index = index
     end
 
-    def reindex(relation, mode:, method_name: nil, on_missing: nil, full: false, resume: false, scope: nil, full_reindex_method_name: nil, job_options: nil)
+    def reindex(relation, mode:, method_name: nil, on_missing: nil, full: false, resume: false, scope: nil, full_reindex_method_name: nil, job_options: nil, batch_by_records: false)
       # apply scopes
       if scope
         relation = relation.send(scope)
@@ -29,7 +29,7 @@ module Searchkick
       end
 
       if mode == :async && full
-        return full_reindex_async(relation, full_reindex_method_name: full_reindex_method_name, job_options: job_options)
+        return full_reindex_async(relation, full_reindex_method_name: full_reindex_method_name, job_options: job_options, batch_by_records: batch_by_records)
       end
 
       relation = resume_relation(relation) if resume
@@ -131,7 +131,7 @@ module Searchkick
       @batch_size ||= index.options[:batch_size] || 1000
     end
 
-    def full_reindex_async(relation, full_reindex_method_name: nil, job_options: nil)
+    def full_reindex_async(relation, full_reindex_method_name: nil, job_options: nil, batch_by_records: false)
       batch_id = 1
       class_name = relation.searchkick_options[:class_name]
       starting_id = false
@@ -149,7 +149,29 @@ module Searchkick
 
       if starting_id.nil?
         # no records, do nothing
-      elsif starting_id.is_a?(Numeric)
+      elsif starting_id.is_a?(Integer) && batch_by_records
+        loop do
+          # Find the id of the batch_size-th record rather than adding batch_size
+          # to the id. This keeps sparse primary keys from creating empty jobs,
+          # without loading every id or using an increasingly large offset.
+          max_id = relation
+            .where(relation.arel_table[primary_key].gteq(starting_id))
+            .except(:order)
+            .order(primary_key => :asc)
+            .offset(batch_size - 1)
+            .pick(primary_key)
+          last_batch = max_id.nil?
+          max_id ||= relation.maximum(primary_key)
+
+          break if max_id.nil? || max_id < starting_id
+
+          batch_job(class_name, batch_id, job_options, min_id: starting_id, max_id: max_id, full_reindex_method_name: full_reindex_method_name ? full_reindex_method_name.to_s : nil)
+          break if last_batch
+
+          batch_id += 1
+          starting_id = max_id + 1
+        end
+      elsif starting_id.is_a?(Integer)
         max_id = relation.maximum(primary_key)
         batches_count = ((max_id - starting_id + 1) / batch_size.to_f).ceil
 

@@ -276,6 +276,84 @@ class ReindexTest < Minitest::Test
     end
   end
 
+  def test_full_async_batches_sparse_integer_ids_by_record_count
+    skip unless activerecord?
+
+    Searchkick.callbacks(false) do
+      Product.create!(id: 1, name: "Product A")
+      Product.create!(id: 10, name: "Product B")
+      Product.create!(id: 11, name: "Product C")
+    end
+
+    had_batch_size = Product.searchkick_options.key?(:batch_size)
+    previous_batch_size = Product.searchkick_options[:batch_size]
+    Product.searchkick_options[:batch_size] = 2
+
+    reindexes = []
+    assert_enqueued_jobs(6) do
+      reindexes << Product.reindex(mode: :async)
+    end
+    clear_enqueued_jobs
+
+    assert_enqueued_jobs(2) do
+      reindexes << Product.reindex(mode: :async, batch_by_records: true)
+    end
+
+    ranges = enqueued_jobs.last(2).map do |job|
+      job["arguments"].first.slice("min_id", "max_id")
+    end
+    assert_equal [
+      {"min_id" => 1, "max_id" => 10},
+      {"min_id" => 11, "max_id" => 11}
+    ], ranges
+  ensure
+    if had_batch_size
+      Product.searchkick_options[:batch_size] = previous_batch_size
+    else
+      Product.searchkick_options.delete(:batch_size)
+    end
+    reindexes&.each do |reindex|
+      Searchkick.with_redis { |r| r.call("DEL", Searchkick.batches_key(reindex[:index_name])) }
+      index = Searchkick::Index.new(reindex[:index_name])
+      index.delete if index.exists?
+    end
+  end
+
+  def test_full_async_batch_by_records_requires_async
+    error = assert_raises(ArgumentError) do
+      Product.reindex(batch_by_records: true)
+    end
+    assert_equal "batch_by_records only available in :async mode", error.message
+  end
+
+  def test_full_async_batches_fractional_numeric_ids_as_record_ids
+    skip unless activerecord?
+
+    record_class = Struct.new(:id)
+    records = [BigDecimal("1.1"), BigDecimal("1.5"), BigDecimal("2.2")].map { |id| record_class.new(id) }
+    relation = Object.new
+    relation.define_singleton_method(:primary_key) { "id" }
+    relation.define_singleton_method(:minimum) { |_primary_key| records.first.id }
+    relation.define_singleton_method(:searchkick_options) { {class_name: "Product"} }
+    relation.define_singleton_method(:except) { |_option| self }
+    relation.define_singleton_method(:klass) { Product }
+    relation.define_singleton_method(:find_in_batches) do |batch_size:, &block|
+      records.each_slice(batch_size, &block)
+    end
+
+    index = Searchkick::Index.new("fractional_products_test", Product.searchkick_options.merge(batch_size: 2))
+    indexer = Searchkick::RelationIndexer.new(index)
+    jobs = []
+    indexer.define_singleton_method(:batch_job) do |_class_name, _batch_id, _job_options, **options|
+      jobs << options
+    end
+    indexer.send(:full_reindex_async, relation, batch_by_records: true)
+
+    expected_ids = [records.first(2), records.last(1)].map { |batch| batch.map { |record| record.id.to_s } }
+    assert_equal expected_ids, jobs.map { |job| job[:record_ids] }
+    assert jobs.none? { |job| job.key?(:min_id) || job.key?(:max_id) }
+  end
+
   def test_full_async_non_integer_pk
     Sku.create(id: SecureRandom.hex, name: "Test")
 
