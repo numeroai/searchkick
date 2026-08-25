@@ -1596,7 +1596,7 @@ For numeric primary keys, jobs are split by ID range. If the primary key has
 large gaps, split jobs by the number of records instead:
 
 ```ruby
-Product.reindex(mode: :async, batch_by: :records)
+Product.reindex(mode: :async, batch_by_records: true)
 ```
 
 This performs one additional database query per batch while jobs are enqueued,

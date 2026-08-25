@@ -5,7 +5,7 @@
 - Reindex queue and batch keys are namespaced by cluster for named clusters (`searchkick:reindex_queue:<cluster>:<index>`, `searchkick:reindex:<cluster>:<index>:batches`). The default cluster's keys are unchanged, so in-flight state survives the upgrade. `Searchkick.reindex_status` takes an optional `cluster:` to read the matching key.
 - Fixed `clean_indices` deleting against the default cluster instead of the index's own — it dropped the index options when building the indices it deletes. This runs inside every full reindex.
 - Fixed `full_reindex` generating mappings from the model's configured cluster rather than the one being written, which mattered when reindexing through a `searchkick_index(cluster:)` override.
-- Added `batch_by: :records` option for full async reindex to avoid enqueueing empty batches for gaps in numeric primary keys.
+- Added `batch_by_records` option for full async reindex to avoid enqueueing empty batches for gaps in numeric primary keys.
 - Added `:queue` mode support for partial reindexing (`Model.reindex(:method_name, mode: :queue)`, including `on_missing` and `full_reindex_method_name`). Note: queue entries now use a binary-sentinel framing in addition to the legacy `id|routing` format — workers must be upgraded before publishers to avoid stale workers misinterpreting new entries.
 
 ## 6.1.2 (2026-06-04)

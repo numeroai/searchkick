@@ -294,7 +294,7 @@ class ReindexTest < Minitest::Test
     clear_enqueued_jobs
 
     assert_enqueued_jobs(2) do
-      reindexes << Product.reindex(mode: :async, batch_by: :records)
+      reindexes << Product.reindex(mode: :async, batch_by_records: true)
     end
 
     ranges = enqueued_jobs.last(2).map do |job|
@@ -317,16 +317,16 @@ class ReindexTest < Minitest::Test
     end
   end
 
-  def test_full_async_batch_by_validation
+  def test_full_async_batch_by_records_validation
     error = assert_raises(ArgumentError) do
-      Product.reindex(mode: :async, batch_by: :invalid)
+      Product.reindex(mode: :async, batch_by_records: :invalid)
     end
-    assert_equal "Invalid value for batch_by: :invalid (expected :id or :records)", error.message
+    assert_equal "Invalid value for batch_by_records: :invalid (expected true or false)", error.message
 
     error = assert_raises(ArgumentError) do
-      Product.reindex(batch_by: :records)
+      Product.reindex(batch_by_records: true)
     end
-    assert_equal "batch_by only available in :async mode", error.message
+    assert_equal "batch_by_records only available in :async mode", error.message
   end
 
   def test_full_async_non_integer_pk
