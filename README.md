@@ -1592,7 +1592,7 @@ Product.reindex(mode: :async)
 # {index_name: "products_production_20260111210018065"}
 ```
 
-For numeric primary keys, jobs are split by ID range. If the primary key has
+For integer primary keys, jobs are split by ID range. If the primary key has
 large gaps, split jobs by the number of records instead:
 
 ```ruby

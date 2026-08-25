@@ -149,7 +149,7 @@ module Searchkick
 
       if starting_id.nil?
         # no records, do nothing
-      elsif starting_id.is_a?(Numeric) && batch_by_records
+      elsif starting_id.is_a?(Integer) && batch_by_records
         loop do
           # Find the id of the batch_size-th record rather than adding batch_size
           # to the id. This keeps sparse primary keys from creating empty jobs,
@@ -171,7 +171,7 @@ module Searchkick
           batch_id += 1
           starting_id = max_id + 1
         end
-      elsif starting_id.is_a?(Numeric)
+      elsif starting_id.is_a?(Integer)
         max_id = relation.maximum(primary_key)
         batches_count = ((max_id - starting_id + 1) / batch_size.to_f).ceil
 
