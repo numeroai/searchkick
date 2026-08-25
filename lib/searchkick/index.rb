@@ -385,9 +385,6 @@ module Searchkick
     def full_reindex(relation, import: true, resume: false, retain: false, mode: nil, refresh_interval: nil, scope: nil, wait: nil, full_reindex_method_name: nil, job_options: nil, batch_by_records: false)
       raise ArgumentError, "wait only available in :async mode" if !wait.nil? && mode != :async
       raise ArgumentError, "Full reindex does not support :queue mode - use :async mode instead" if mode == :queue
-      unless [true, false].include?(batch_by_records)
-        raise ArgumentError, "Invalid value for batch_by_records: #{batch_by_records.inspect} (expected true or false)"
-      end
       raise ArgumentError, "batch_by_records only available in :async mode" if batch_by_records && mode != :async
 
       if resume

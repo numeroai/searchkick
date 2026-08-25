@@ -277,6 +277,8 @@ class ReindexTest < Minitest::Test
   end
 
   def test_full_async_batches_sparse_integer_ids_by_record_count
+    skip unless activerecord?
+
     Searchkick.callbacks(false) do
       Product.create!(id: 1, name: "Product A")
       Product.create!(id: 10, name: "Product B")
@@ -317,12 +319,7 @@ class ReindexTest < Minitest::Test
     end
   end
 
-  def test_full_async_batch_by_records_validation
-    error = assert_raises(ArgumentError) do
-      Product.reindex(mode: :async, batch_by_records: :invalid)
-    end
-    assert_equal "Invalid value for batch_by_records: :invalid (expected true or false)", error.message
-
+  def test_full_async_batch_by_records_requires_async
     error = assert_raises(ArgumentError) do
       Product.reindex(batch_by_records: true)
     end
