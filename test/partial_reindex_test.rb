@@ -181,6 +181,32 @@ class PartialReindexTest < Minitest::Test
     assert_search "blue", ["Bye"], fields: [:color], load: false
   end
 
+  def test_bulk_reindex_job_scope_replaces_search_import
+    store [{name: "Hi", color: "Blue"}]
+
+    product = Product.first
+    Searchkick.callbacks(false) do
+      product.update!(name: "Bye", color: "Red")
+    end
+
+    Product.define_singleton_method(:search_import) { raise "search_import applied" }
+    begin
+      Searchkick::BulkReindexJob.perform_now(
+        class_name: "Product",
+        record_ids: [product.id],
+        method_name: "search_name",
+        scope: "all"
+      )
+    ensure
+      Product.singleton_class.send(:remove_method, :search_import)
+    end
+    Product.searchkick_index.refresh
+
+    # name updated, but not color
+    assert_search "bye", ["Bye"], fields: [:name], load: false
+    assert_search "blue", ["Bye"], fields: [:color], load: false
+  end
+
   def test_relation_queue
     Contact.searchkick_index.reindex_queue.clear
 
