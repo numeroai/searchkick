@@ -4,7 +4,9 @@ module Searchkick
 
     # cluster: pins the job to one cluster. Omit it - as most callers should -
     # and the worker resolves the model's own cluster at execution time.
-    def perform(class_name:, record_ids: nil, index_name: nil, cluster: nil, method_name: nil, batch_id: nil, min_id: nil, max_id: nil, ignore_missing: nil, on_missing: nil, full_reindex_method_name: nil)
+    # scope: replaces search_import for this job, so a partial update that
+    # reads no associations can skip the model's eager loading.
+    def perform(class_name:, record_ids: nil, index_name: nil, cluster: nil, method_name: nil, batch_id: nil, min_id: nil, max_id: nil, ignore_missing: nil, on_missing: nil, full_reindex_method_name: nil, scope: nil)
       on_missing = Searchkick.normalize_on_missing(on_missing, ignore_missing)
       model = Searchkick.load_model(class_name)
       index = model.searchkick_index(name: index_name, cluster: cluster&.to_sym)
@@ -13,7 +15,11 @@ module Searchkick
 
       relation = Searchkick.scope(model)
       relation = Searchkick.load_records(relation, record_ids)
-      relation = relation.search_import if relation.respond_to?(:search_import)
+      if scope
+        relation = relation.send(scope)
+      elsif relation.respond_to?(:search_import)
+        relation = relation.search_import
+      end
 
       RecordIndexer.new(index).reindex(
         relation,
